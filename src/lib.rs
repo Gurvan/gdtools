@@ -3,4 +3,4 @@ pub mod lint;
 pub mod parser;
 pub mod rules;
 
-pub use lint::{Diagnostic, LintContext, Rule, Severity};
+pub use lint::{run_linter, Diagnostic, LintContext, Rule, Severity};
