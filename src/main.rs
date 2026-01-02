@@ -39,6 +39,8 @@ enum Command {
     CheckConfig,
     /// Dump default configuration
     DumpConfig,
+    /// List all available rules
+    Rules,
 }
 
 #[derive(Clone, Debug, Default, clap::ValueEnum)]
@@ -94,6 +96,43 @@ fn run() -> Result<bool> {
             println!("{}", toml);
             Ok(false)
         }
+        Command::Rules => {
+            list_rules();
+            Ok(false)
+        }
+    }
+}
+
+fn list_rules() {
+    let rules = all_rules();
+
+    println!("Available rules:\n");
+
+    let mut by_category: std::collections::HashMap<_, Vec<_>> = std::collections::HashMap::new();
+    for rule in &rules {
+        let meta = rule.meta();
+        by_category
+            .entry(meta.category.to_string())
+            .or_default()
+            .push(meta);
+    }
+
+    let mut categories: Vec<_> = by_category.keys().cloned().collect();
+    categories.sort();
+
+    for category in categories {
+        println!("{}:", category.to_uppercase());
+        let mut rules = by_category.remove(&category).unwrap();
+        rules.sort_by_key(|m| m.id);
+        for meta in rules {
+            let severity = match meta.default_severity {
+                Severity::Error => "error",
+                Severity::Warning => "warning",
+                Severity::Info => "info",
+            };
+            println!("  {:<30} [{}] {}", meta.id, severity, meta.description);
+        }
+        println!();
     }
 }
 
