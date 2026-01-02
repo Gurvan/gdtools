@@ -222,3 +222,192 @@ impl ClassDefinitionsOrderRule {
         diagnostics
     }
 }
+
+#[derive(Debug)]
+pub struct NoElifReturnRule {
+    meta: RuleMetadata,
+}
+
+impl Default for NoElifReturnRule {
+    fn default() -> Self {
+        Self {
+            meta: RuleMetadata {
+                id: "no-elif-return",
+                name: "No Elif After Return",
+                category: RuleCategory::Style,
+                default_severity: Severity::Warning,
+                description: "Use else instead of elif when the if branch returns",
+            },
+        }
+    }
+}
+
+impl Rule for NoElifReturnRule {
+    fn meta(&self) -> &RuleMetadata {
+        &self.meta
+    }
+
+    fn interested_node_kinds(&self) -> Option<&'static [&'static str]> {
+        Some(&["if_statement"])
+    }
+
+    fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
+        // Check if the if branch ends with a return
+        // The if body is in "body" field (first body child of if_statement)
+        if let Some(body) = node.child_by_field_name("body") {
+            if !block_ends_with_return(body) {
+                return;
+            }
+
+            // Check for elif branches
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "elif_clause" {
+                    let severity = ctx
+                        .config()
+                        .get_rule_severity(self.meta.id, self.meta.default_severity);
+                    ctx.report_node(
+                        child,
+                        self.meta.id,
+                        severity,
+                        "Use 'if' instead of 'elif' when the previous branch returns",
+                    );
+                }
+            }
+        }
+    }
+
+    fn configure(&mut self, _config: &RuleConfig) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct NoElseReturnRule {
+    meta: RuleMetadata,
+}
+
+impl Default for NoElseReturnRule {
+    fn default() -> Self {
+        Self {
+            meta: RuleMetadata {
+                id: "no-else-return",
+                name: "No Else After Return",
+                category: RuleCategory::Style,
+                default_severity: Severity::Warning,
+                description: "Unnecessary else after return statement",
+            },
+        }
+    }
+}
+
+impl Rule for NoElseReturnRule {
+    fn meta(&self) -> &RuleMetadata {
+        &self.meta
+    }
+
+    fn interested_node_kinds(&self) -> Option<&'static [&'static str]> {
+        Some(&["if_statement"])
+    }
+
+    fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
+        // Check if the if branch (and all elif branches) end with a return
+        if let Some(body) = node.child_by_field_name("body") {
+            if !block_ends_with_return(body) {
+                return;
+            }
+        } else {
+            return;
+        }
+
+        // Check all elif branches
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if child.kind() == "elif_clause" {
+                if let Some(body) = child.child_by_field_name("body") {
+                    if !block_ends_with_return(body) {
+                        return;
+                    }
+                }
+            }
+        }
+
+        // If we get here, all if/elif branches return
+        // Check for else clause
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if child.kind() == "else_clause" {
+                let severity = ctx
+                    .config()
+                    .get_rule_severity(self.meta.id, self.meta.default_severity);
+                ctx.report_node(
+                    child,
+                    self.meta.id,
+                    severity,
+                    "Unnecessary 'else' after 'return'",
+                );
+            }
+        }
+    }
+
+    fn configure(&mut self, _config: &RuleConfig) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+fn block_ends_with_return(block: Node<'_>) -> bool {
+    let mut cursor = block.walk();
+    let children: Vec<_> = block.children(&mut cursor).collect();
+
+    if let Some(last) = children.last() {
+        if last.kind() == "return_statement" {
+            return true;
+        }
+        // Check if it's an if statement where all branches return
+        if last.kind() == "if_statement" {
+            return all_branches_return(*last);
+        }
+    }
+    false
+}
+
+fn all_branches_return(if_node: Node<'_>) -> bool {
+    // Check if branch
+    if let Some(body) = if_node.child_by_field_name("body") {
+        if !block_ends_with_return(body) {
+            return false;
+        }
+    } else {
+        return false;
+    }
+
+    let mut has_else = false;
+    let mut cursor = if_node.walk();
+    for child in if_node.children(&mut cursor) {
+        match child.kind() {
+            "elif_clause" => {
+                if let Some(body) = child.child_by_field_name("body") {
+                    if !block_ends_with_return(body) {
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
+            }
+            "else_clause" => {
+                has_else = true;
+                if let Some(body) = child.child_by_field_name("body") {
+                    if !block_ends_with_return(body) {
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // Must have an else clause for all branches to return
+    has_else
+}
