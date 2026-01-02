@@ -7,9 +7,13 @@ use crate::lint::{LintContext, Rule, RuleCategory, RuleMetadata, Severity};
 
 static SNAKE_CASE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^_?[a-z][a-z0-9_]*$").unwrap());
 static PASCAL_CASE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[A-Z][A-Za-z0-9]*$").unwrap());
+static PRIVATE_PASCAL_CASE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^_?[A-Z][A-Za-z0-9]*$").unwrap());
 static CONSTANT_CASE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^_?[A-Z][A-Z0-9_]*$").unwrap());
 static SIGNAL_HANDLER: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^_on_[A-Za-z0-9]+_[a-z][a-z0-9_]*$").unwrap());
+static LOAD_CONSTANT: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^_?([A-Z][A-Za-z0-9]*|[A-Z][A-Z0-9_]*)$").unwrap());
 
 #[derive(Debug)]
 pub struct FunctionNameRule {
@@ -402,7 +406,12 @@ impl Rule for EnumElementNameRule {
     }
 
     fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
-        if let Some(name_node) = node.child_by_field_name("name") {
+        // The enumerator node has an identifier child directly
+        let name_node = node
+            .child_by_field_name("name")
+            .or_else(|| node.named_child(0).filter(|c| c.kind() == "identifier"));
+
+        if let Some(name_node) = name_node {
             let name = ctx.node_text(name_node);
 
             if !self.pattern.is_match(name) {
@@ -424,6 +433,266 @@ impl Rule for EnumElementNameRule {
             if let Some(p) = pattern.as_str() {
                 self.pattern =
                     Regex::new(p).map_err(|e| format!("Invalid pattern: {}", e))?;
+            }
+        }
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Additional naming rules
+// ============================================================================
+
+#[derive(Debug)]
+pub struct FunctionArgumentNameRule {
+    meta: RuleMetadata,
+    pattern: Regex,
+}
+
+impl Default for FunctionArgumentNameRule {
+    fn default() -> Self {
+        Self {
+            meta: RuleMetadata {
+                id: "function-argument-name",
+                name: "Function Argument Name",
+                category: RuleCategory::Naming,
+                default_severity: Severity::Warning,
+                description: "Function arguments should be snake_case",
+            },
+            pattern: SNAKE_CASE.clone(),
+        }
+    }
+}
+
+impl Rule for FunctionArgumentNameRule {
+    fn meta(&self) -> &RuleMetadata {
+        &self.meta
+    }
+
+    fn interested_node_kinds(&self) -> Option<&'static [&'static str]> {
+        Some(&["parameters"])
+    }
+
+    fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            let name_node = match child.kind() {
+                "identifier" => Some(child),
+                "typed_parameter" => child.named_child(0).filter(|c| c.kind() == "identifier"),
+                _ => None,
+            };
+
+            if let Some(name_node) = name_node {
+                let name = ctx.node_text(name_node);
+                if !self.pattern.is_match(name) {
+                    let severity = ctx
+                        .config()
+                        .get_rule_severity(self.meta.id, self.meta.default_severity);
+                    ctx.report_node(
+                        name_node,
+                        self.meta.id,
+                        severity,
+                        format!("Function argument \"{}\" should be snake_case", name),
+                    );
+                }
+            }
+        }
+    }
+
+    fn configure(&mut self, config: &RuleConfig) -> Result<(), String> {
+        if let Some(pattern) = config.options.get("pattern") {
+            if let Some(p) = pattern.as_str() {
+                self.pattern = Regex::new(p).map_err(|e| format!("Invalid pattern: {}", e))?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct LoopVariableNameRule {
+    meta: RuleMetadata,
+    pattern: Regex,
+}
+
+impl Default for LoopVariableNameRule {
+    fn default() -> Self {
+        Self {
+            meta: RuleMetadata {
+                id: "loop-variable-name",
+                name: "Loop Variable Name",
+                category: RuleCategory::Naming,
+                default_severity: Severity::Warning,
+                description: "Loop variables should be snake_case",
+            },
+            pattern: SNAKE_CASE.clone(),
+        }
+    }
+}
+
+impl Rule for LoopVariableNameRule {
+    fn meta(&self) -> &RuleMetadata {
+        &self.meta
+    }
+
+    fn interested_node_kinds(&self) -> Option<&'static [&'static str]> {
+        Some(&["for_statement"])
+    }
+
+    fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
+        // for_statement has an identifier child for the loop variable
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if child.kind() == "identifier" {
+                let name = ctx.node_text(child);
+                if !self.pattern.is_match(name) {
+                    let severity = ctx
+                        .config()
+                        .get_rule_severity(self.meta.id, self.meta.default_severity);
+                    ctx.report_node(
+                        child,
+                        self.meta.id,
+                        severity,
+                        format!("Loop variable \"{}\" should be snake_case", name),
+                    );
+                }
+                break; // Only check the first identifier (the loop variable)
+            }
+        }
+    }
+
+    fn configure(&mut self, config: &RuleConfig) -> Result<(), String> {
+        if let Some(pattern) = config.options.get("pattern") {
+            if let Some(p) = pattern.as_str() {
+                self.pattern = Regex::new(p).map_err(|e| format!("Invalid pattern: {}", e))?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct SubClassNameRule {
+    meta: RuleMetadata,
+    pattern: Regex,
+}
+
+impl Default for SubClassNameRule {
+    fn default() -> Self {
+        Self {
+            meta: RuleMetadata {
+                id: "sub-class-name",
+                name: "Sub Class Name",
+                category: RuleCategory::Naming,
+                default_severity: Severity::Warning,
+                description: "Inner class names should be PascalCase",
+            },
+            pattern: PRIVATE_PASCAL_CASE.clone(),
+        }
+    }
+}
+
+impl Rule for SubClassNameRule {
+    fn meta(&self) -> &RuleMetadata {
+        &self.meta
+    }
+
+    fn interested_node_kinds(&self) -> Option<&'static [&'static str]> {
+        Some(&["class_definition"])
+    }
+
+    fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
+        // Only check inner classes (those with a parent that's not the source)
+        if let Some(parent) = node.parent() {
+            if parent.kind() != "source" && parent.kind() != "source_file" {
+                if let Some(name_node) = node.child_by_field_name("name") {
+                    let name = ctx.node_text(name_node);
+                    if !self.pattern.is_match(name) {
+                        let severity = ctx
+                            .config()
+                            .get_rule_severity(self.meta.id, self.meta.default_severity);
+                        ctx.report_node(
+                            name_node,
+                            self.meta.id,
+                            severity,
+                            format!("Inner class name \"{}\" should be PascalCase", name),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    fn configure(&mut self, config: &RuleConfig) -> Result<(), String> {
+        if let Some(pattern) = config.options.get("pattern") {
+            if let Some(p) = pattern.as_str() {
+                self.pattern = Regex::new(p).map_err(|e| format!("Invalid pattern: {}", e))?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct LoadConstantNameRule {
+    meta: RuleMetadata,
+    pattern: Regex,
+}
+
+impl Default for LoadConstantNameRule {
+    fn default() -> Self {
+        Self {
+            meta: RuleMetadata {
+                id: "load-constant-name",
+                name: "Load Constant Name",
+                category: RuleCategory::Naming,
+                default_severity: Severity::Warning,
+                description: "Constants with load/preload should be PascalCase or CONSTANT_CASE",
+            },
+            pattern: LOAD_CONSTANT.clone(),
+        }
+    }
+}
+
+impl Rule for LoadConstantNameRule {
+    fn meta(&self) -> &RuleMetadata {
+        &self.meta
+    }
+
+    fn interested_node_kinds(&self) -> Option<&'static [&'static str]> {
+        Some(&["const_statement"])
+    }
+
+    fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
+        // Check if the const value is a load/preload call
+        let node_text = ctx.node_text(node);
+        if !node_text.contains("load(") && !node_text.contains("preload(") {
+            return;
+        }
+
+        if let Some(name_node) = node.child_by_field_name("name") {
+            let name = ctx.node_text(name_node);
+            if !self.pattern.is_match(name) {
+                let severity = ctx
+                    .config()
+                    .get_rule_severity(self.meta.id, self.meta.default_severity);
+                ctx.report_node(
+                    name_node,
+                    self.meta.id,
+                    severity,
+                    format!(
+                        "Load constant \"{}\" should be PascalCase or CONSTANT_CASE",
+                        name
+                    ),
+                );
+            }
+        }
+    }
+
+    fn configure(&mut self, config: &RuleConfig) -> Result<(), String> {
+        if let Some(pattern) = config.options.get("pattern") {
+            if let Some(p) = pattern.as_str() {
+                self.pattern = Regex::new(p).map_err(|e| format!("Invalid pattern: {}", e))?;
             }
         }
         Ok(())
