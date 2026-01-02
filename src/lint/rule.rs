@@ -18,6 +18,7 @@ pub enum RuleCategory {
     Naming,
     Format,
     Basic,
+    Design,
     Style,
 }
 
@@ -27,6 +28,7 @@ impl std::fmt::Display for RuleCategory {
             RuleCategory::Naming => write!(f, "naming"),
             RuleCategory::Format => write!(f, "format"),
             RuleCategory::Basic => write!(f, "basic"),
+            RuleCategory::Design => write!(f, "design"),
             RuleCategory::Style => write!(f, "style"),
         }
     }
