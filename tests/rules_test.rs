@@ -68,11 +68,33 @@ fn test_constant_name_upper_snake() {
 }
 
 #[test]
-fn test_variable_name_snake_case() {
-    assert!(!has_rule_violation("var my_var = 0", "variable-name"));
-    assert!(!has_rule_violation("var _private_var = 0", "variable-name"));
-    assert!(has_rule_violation("var MyVar = 0", "variable-name"));
-    assert!(has_rule_violation("var myVar = 0", "variable-name"));
+fn test_class_variable_name_snake_case() {
+    // Class-scope variables should be snake_case
+    assert!(!has_rule_violation("var my_var = 0", "class-variable-name"));
+    assert!(!has_rule_violation("var _private_var = 0", "class-variable-name"));
+    assert!(has_rule_violation("var MyVar = 0", "class-variable-name"));
+    assert!(has_rule_violation("var myVar = 0", "class-variable-name"));
+}
+
+#[test]
+fn test_function_variable_name_snake_case() {
+    // Function-scope variables should be snake_case
+    assert!(!has_rule_violation("func f():\n    var my_var = 0", "function-variable-name"));
+    assert!(has_rule_violation("func f():\n    var MyVar = 0", "function-variable-name"));
+}
+
+#[test]
+fn test_class_load_variable_name() {
+    // Class load/preload variables should be PascalCase or snake_case
+    assert!(!has_rule_violation("var MyScene = load(\"res://a.tscn\")", "class-load-variable-name"));
+    assert!(!has_rule_violation("var my_scene = load(\"res://a.tscn\")", "class-load-variable-name"));
+}
+
+#[test]
+fn test_function_preload_variable_name() {
+    // Function-scope preload variables should be PascalCase
+    assert!(!has_rule_violation("func f():\n    var MyScene = preload(\"res://a.tscn\")", "function-preload-variable-name"));
+    assert!(has_rule_violation("func f():\n    var my_scene = preload(\"res://a.tscn\")", "function-preload-variable-name"));
 }
 
 #[test]
@@ -91,6 +113,34 @@ fn test_enum_element_name_upper_snake() {
     assert!(!has_rule_violation("enum E { MAX_VALUE }", "enum-element-name"));
     assert!(has_rule_violation("enum State { idle, running }", "enum-element-name"));
     assert!(has_rule_violation("enum State { Idle, Running }", "enum-element-name"));
+}
+
+#[test]
+fn test_function_argument_name() {
+    assert!(!has_rule_violation("func f(my_arg):\n    pass", "function-argument-name"));
+    assert!(!has_rule_violation("func f(_unused):\n    pass", "function-argument-name"));
+    assert!(has_rule_violation("func f(MyArg):\n    pass", "function-argument-name"));
+}
+
+#[test]
+fn test_loop_variable_name() {
+    assert!(!has_rule_violation("for i in range(10):\n    pass", "loop-variable-name"));
+    assert!(!has_rule_violation("for _item in items:\n    pass", "loop-variable-name"));
+    assert!(has_rule_violation("for MyItem in items:\n    pass", "loop-variable-name"));
+}
+
+#[test]
+fn test_sub_class_name() {
+    // Inner classes should be PascalCase
+    assert!(!has_rule_violation("class MyClass:\n    class InnerClass:\n        pass", "sub-class-name"));
+}
+
+#[test]
+fn test_load_constant_name() {
+    // Load constants should be PascalCase or CONSTANT_CASE
+    assert!(!has_rule_violation("const MyScene = load(\"res://a.tscn\")", "load-constant-name"));
+    assert!(!has_rule_violation("const MY_SCENE = load(\"res://a.tscn\")", "load-constant-name"));
+    assert!(has_rule_violation("const my_scene = load(\"res://a.tscn\")", "load-constant-name"));
 }
 
 // ============================================================================

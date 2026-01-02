@@ -12,8 +12,12 @@ static PRIVATE_PASCAL_CASE: Lazy<Regex> =
 static CONSTANT_CASE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^_?[A-Z][A-Z0-9_]*$").unwrap());
 static SIGNAL_HANDLER: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^_on_[A-Za-z0-9]+_[a-z][a-z0-9_]*$").unwrap());
+// PascalCase or CONSTANT_CASE (for load constants)
 static LOAD_CONSTANT: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^_?([A-Z][A-Za-z0-9]*|[A-Z][A-Z0-9_]*)$").unwrap());
+// PascalCase or snake_case (for class load variables)
+static PASCAL_OR_SNAKE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^(_?[A-Z][A-Za-z0-9]*|_?[a-z][a-z0-9_]*)$").unwrap());
 
 #[derive(Debug)]
 pub struct FunctionNameRule {
@@ -684,6 +688,298 @@ impl Rule for LoadConstantNameRule {
                         "Load constant \"{}\" should be PascalCase or CONSTANT_CASE",
                         name
                     ),
+                );
+            }
+        }
+    }
+
+    fn configure(&mut self, config: &RuleConfig) -> Result<(), String> {
+        if let Some(pattern) = config.options.get("pattern") {
+            if let Some(p) = pattern.as_str() {
+                self.pattern = Regex::new(p).map_err(|e| format!("Invalid pattern: {}", e))?;
+            }
+        }
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Variable scope-specific naming rules
+// ============================================================================
+
+/// Helper to check if a variable_statement is at class scope (not inside a function)
+fn is_class_scope_variable(node: Node<'_>) -> bool {
+    let mut current = node.parent();
+    while let Some(parent) = current {
+        match parent.kind() {
+            "function_definition" => return false,
+            "source_file" | "source" => return true,
+            "body" => {
+                // Check if this body belongs to a class_definition or function
+                if let Some(grandparent) = parent.parent() {
+                    if grandparent.kind() == "class_definition" {
+                        return true;
+                    }
+                }
+            }
+            _ => {}
+        }
+        current = parent.parent();
+    }
+    true // Default to class scope if we can't determine
+}
+
+/// Helper to check if a variable has a load/preload call
+fn has_load_or_preload(node: Node<'_>, ctx: &LintContext<'_>) -> bool {
+    let text = ctx.node_text(node);
+    text.contains("load(") || text.contains("preload(")
+}
+
+#[derive(Debug)]
+pub struct ClassVariableNameRule {
+    meta: RuleMetadata,
+    pattern: Regex,
+}
+
+impl Default for ClassVariableNameRule {
+    fn default() -> Self {
+        Self {
+            meta: RuleMetadata {
+                id: "class-variable-name",
+                name: "Class Variable Name",
+                category: RuleCategory::Naming,
+                default_severity: Severity::Warning,
+                description: "Class-scope variables should be snake_case",
+            },
+            pattern: SNAKE_CASE.clone(),
+        }
+    }
+}
+
+impl Rule for ClassVariableNameRule {
+    fn meta(&self) -> &RuleMetadata {
+        &self.meta
+    }
+
+    fn interested_node_kinds(&self) -> Option<&'static [&'static str]> {
+        Some(&["variable_statement"])
+    }
+
+    fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
+        // Only check class-scope variables without load/preload
+        if !is_class_scope_variable(node) || has_load_or_preload(node, ctx) {
+            return;
+        }
+
+        if let Some(name_node) = node.child_by_field_name("name") {
+            let name = ctx.node_text(name_node);
+
+            if !self.pattern.is_match(name) {
+                let severity = ctx
+                    .config()
+                    .get_rule_severity(self.meta.id, self.meta.default_severity);
+                ctx.report_node(
+                    name_node,
+                    self.meta.id,
+                    severity,
+                    format!("Class variable \"{}\" should be snake_case", name),
+                );
+            }
+        }
+    }
+
+    fn configure(&mut self, config: &RuleConfig) -> Result<(), String> {
+        if let Some(pattern) = config.options.get("pattern") {
+            if let Some(p) = pattern.as_str() {
+                self.pattern = Regex::new(p).map_err(|e| format!("Invalid pattern: {}", e))?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct ClassLoadVariableNameRule {
+    meta: RuleMetadata,
+    pattern: Regex,
+}
+
+impl Default for ClassLoadVariableNameRule {
+    fn default() -> Self {
+        Self {
+            meta: RuleMetadata {
+                id: "class-load-variable-name",
+                name: "Class Load Variable Name",
+                category: RuleCategory::Naming,
+                default_severity: Severity::Warning,
+                description: "Class-scope load/preload variables should be PascalCase or snake_case",
+            },
+            pattern: PASCAL_OR_SNAKE.clone(),
+        }
+    }
+}
+
+impl Rule for ClassLoadVariableNameRule {
+    fn meta(&self) -> &RuleMetadata {
+        &self.meta
+    }
+
+    fn interested_node_kinds(&self) -> Option<&'static [&'static str]> {
+        Some(&["variable_statement"])
+    }
+
+    fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
+        // Only check class-scope variables with load/preload
+        if !is_class_scope_variable(node) || !has_load_or_preload(node, ctx) {
+            return;
+        }
+
+        if let Some(name_node) = node.child_by_field_name("name") {
+            let name = ctx.node_text(name_node);
+
+            if !self.pattern.is_match(name) {
+                let severity = ctx
+                    .config()
+                    .get_rule_severity(self.meta.id, self.meta.default_severity);
+                ctx.report_node(
+                    name_node,
+                    self.meta.id,
+                    severity,
+                    format!(
+                        "Class load variable \"{}\" should be PascalCase or snake_case",
+                        name
+                    ),
+                );
+            }
+        }
+    }
+
+    fn configure(&mut self, config: &RuleConfig) -> Result<(), String> {
+        if let Some(pattern) = config.options.get("pattern") {
+            if let Some(p) = pattern.as_str() {
+                self.pattern = Regex::new(p).map_err(|e| format!("Invalid pattern: {}", e))?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct FunctionVariableNameRule {
+    meta: RuleMetadata,
+    pattern: Regex,
+}
+
+impl Default for FunctionVariableNameRule {
+    fn default() -> Self {
+        Self {
+            meta: RuleMetadata {
+                id: "function-variable-name",
+                name: "Function Variable Name",
+                category: RuleCategory::Naming,
+                default_severity: Severity::Warning,
+                description: "Function-scope variables should be snake_case",
+            },
+            pattern: SNAKE_CASE.clone(),
+        }
+    }
+}
+
+impl Rule for FunctionVariableNameRule {
+    fn meta(&self) -> &RuleMetadata {
+        &self.meta
+    }
+
+    fn interested_node_kinds(&self) -> Option<&'static [&'static str]> {
+        Some(&["variable_statement"])
+    }
+
+    fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
+        // Only check function-scope variables without load/preload
+        if is_class_scope_variable(node) || has_load_or_preload(node, ctx) {
+            return;
+        }
+
+        if let Some(name_node) = node.child_by_field_name("name") {
+            let name = ctx.node_text(name_node);
+
+            if !self.pattern.is_match(name) {
+                let severity = ctx
+                    .config()
+                    .get_rule_severity(self.meta.id, self.meta.default_severity);
+                ctx.report_node(
+                    name_node,
+                    self.meta.id,
+                    severity,
+                    format!("Function variable \"{}\" should be snake_case", name),
+                );
+            }
+        }
+    }
+
+    fn configure(&mut self, config: &RuleConfig) -> Result<(), String> {
+        if let Some(pattern) = config.options.get("pattern") {
+            if let Some(p) = pattern.as_str() {
+                self.pattern = Regex::new(p).map_err(|e| format!("Invalid pattern: {}", e))?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct FunctionPreloadVariableNameRule {
+    meta: RuleMetadata,
+    pattern: Regex,
+}
+
+impl Default for FunctionPreloadVariableNameRule {
+    fn default() -> Self {
+        Self {
+            meta: RuleMetadata {
+                id: "function-preload-variable-name",
+                name: "Function Preload Variable Name",
+                category: RuleCategory::Naming,
+                default_severity: Severity::Warning,
+                description: "Function-scope preload variables should be PascalCase",
+            },
+            pattern: PASCAL_CASE.clone(),
+        }
+    }
+}
+
+impl Rule for FunctionPreloadVariableNameRule {
+    fn meta(&self) -> &RuleMetadata {
+        &self.meta
+    }
+
+    fn interested_node_kinds(&self) -> Option<&'static [&'static str]> {
+        Some(&["variable_statement"])
+    }
+
+    fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
+        // Only check function-scope variables with preload (not load)
+        if is_class_scope_variable(node) {
+            return;
+        }
+
+        let text = ctx.node_text(node);
+        if !text.contains("preload(") {
+            return;
+        }
+
+        if let Some(name_node) = node.child_by_field_name("name") {
+            let name = ctx.node_text(name_node);
+
+            if !self.pattern.is_match(name) {
+                let severity = ctx
+                    .config()
+                    .get_rule_severity(self.meta.id, self.meta.default_severity);
+                ctx.report_node(
+                    name_node,
+                    self.meta.id,
+                    severity,
+                    format!("Function preload variable \"{}\" should be PascalCase", name),
                 );
             }
         }
