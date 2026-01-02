@@ -229,3 +229,71 @@ impl Rule for MixedTabsSpacesRule {
         Ok(())
     }
 }
+
+#[derive(Debug)]
+pub struct MaxFileLinesRule {
+    meta: RuleMetadata,
+    max_lines: usize,
+}
+
+impl Default for MaxFileLinesRule {
+    fn default() -> Self {
+        Self {
+            meta: RuleMetadata {
+                id: "max-file-lines",
+                name: "Maximum File Lines",
+                category: RuleCategory::Format,
+                default_severity: Severity::Warning,
+                description: "Files should not exceed the maximum number of lines",
+            },
+            max_lines: 1000,
+        }
+    }
+}
+
+impl Rule for MaxFileLinesRule {
+    fn meta(&self) -> &RuleMetadata {
+        &self.meta
+    }
+
+    fn interested_node_kinds(&self) -> Option<&'static [&'static str]> {
+        None
+    }
+
+    fn check_node(&self, _node: Node<'_>, _ctx: &mut LintContext<'_>) {}
+
+    fn check_file_start(&self, ctx: &mut LintContext<'_>) {
+        let line_count = ctx.source().lines().count();
+
+        if line_count > self.max_lines {
+            let severity = ctx
+                .config()
+                .get_rule_severity(self.meta.id, self.meta.default_severity);
+            let diagnostic = Diagnostic::new(
+                self.meta.id,
+                severity,
+                format!(
+                    "File has {} lines (max {})",
+                    line_count, self.max_lines
+                ),
+            )
+            .with_location(self.max_lines + 1, 1);
+
+            ctx.report(diagnostic);
+        }
+    }
+
+    fn configure(&mut self, config: &RuleConfig) -> Result<(), String> {
+        if let Some(max) = config.options.get("max") {
+            if let Some(n) = max.as_integer() {
+                self.max_lines = n as usize;
+            }
+        }
+        if let Some(max) = config.options.get("max_lines") {
+            if let Some(n) = max.as_integer() {
+                self.max_lines = n as usize;
+            }
+        }
+        Ok(())
+    }
+}
