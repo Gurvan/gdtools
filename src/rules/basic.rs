@@ -193,10 +193,23 @@ impl Rule for ComparisonWithItselfRule {
     }
 
     fn interested_node_kinds(&self) -> Option<&'static [&'static str]> {
-        Some(&["comparison_operator"])
+        Some(&["binary_operator", "comparison_operator"])
     }
 
     fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
+        // Check if this is a comparison operation
+        let node_text = ctx.node_text(node);
+        let is_comparison = node_text.contains("==")
+            || node_text.contains("!=")
+            || node_text.contains("<=")
+            || node_text.contains(">=")
+            || (node_text.contains('<') && !node_text.contains("<<"))
+            || (node_text.contains('>') && !node_text.contains(">>"));
+
+        if !is_comparison {
+            return;
+        }
+
         let child_count = node.named_child_count();
         if child_count < 2 {
             return;
@@ -215,6 +228,148 @@ impl Rule for ComparisonWithItselfRule {
                     self.meta.id,
                     severity,
                     format!("Comparison of \"{}\" with itself", left_text),
+                );
+            }
+        }
+    }
+
+    fn configure(&mut self, _config: &RuleConfig) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Additional basic rules
+// ============================================================================
+
+#[derive(Debug)]
+pub struct DuplicatedLoadRule {
+    meta: RuleMetadata,
+}
+
+impl Default for DuplicatedLoadRule {
+    fn default() -> Self {
+        Self {
+            meta: RuleMetadata {
+                id: "duplicated-load",
+                name: "Duplicated Load",
+                category: RuleCategory::Basic,
+                default_severity: Severity::Warning,
+                description: "Resource is loaded multiple times",
+            },
+        }
+    }
+}
+
+impl Rule for DuplicatedLoadRule {
+    fn meta(&self) -> &RuleMetadata {
+        &self.meta
+    }
+
+    fn interested_node_kinds(&self) -> Option<&'static [&'static str]> {
+        None
+    }
+
+    fn check_node(&self, _node: Node<'_>, _ctx: &mut LintContext<'_>) {}
+
+    fn check_file_start(&self, ctx: &mut LintContext<'_>) {
+        let source = ctx.source().to_string();
+        let severity = ctx
+            .config()
+            .get_rule_severity(self.meta.id, self.meta.default_severity);
+
+        let mut loads: std::collections::HashMap<String, (usize, usize)> =
+            std::collections::HashMap::new();
+
+        // Find all load/preload calls with string arguments
+        let load_pattern =
+            regex::Regex::new(r#"(load|preload)\s*\(\s*["']([^"']+)["']\s*\)"#).unwrap();
+
+        let mut diagnostics = Vec::new();
+        for (line_idx, line) in source.lines().enumerate() {
+            for cap in load_pattern.captures_iter(line) {
+                let path = cap.get(2).unwrap().as_str().to_string();
+                let col = cap.get(0).unwrap().start() + 1;
+
+                if let Some((first_line, first_col)) = loads.get(&path) {
+                    let diagnostic = crate::lint::Diagnostic::new(
+                        self.meta.id,
+                        severity,
+                        format!(
+                            "Resource \"{}\" already loaded at line {}:{}",
+                            path, first_line, first_col
+                        ),
+                    )
+                    .with_location(line_idx + 1, col);
+                    diagnostics.push(diagnostic);
+                } else {
+                    loads.insert(path, (line_idx + 1, col));
+                }
+            }
+        }
+
+        for diagnostic in diagnostics {
+            ctx.report(diagnostic);
+        }
+    }
+
+    fn configure(&mut self, _config: &RuleConfig) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct ExpressionNotAssignedRule {
+    meta: RuleMetadata,
+}
+
+impl Default for ExpressionNotAssignedRule {
+    fn default() -> Self {
+        Self {
+            meta: RuleMetadata {
+                id: "expression-not-assigned",
+                name: "Expression Not Assigned",
+                category: RuleCategory::Basic,
+                default_severity: Severity::Warning,
+                description: "Expression result is not used",
+            },
+        }
+    }
+}
+
+impl Rule for ExpressionNotAssignedRule {
+    fn meta(&self) -> &RuleMetadata {
+        &self.meta
+    }
+
+    fn interested_node_kinds(&self) -> Option<&'static [&'static str]> {
+        Some(&["expression_statement"])
+    }
+
+    fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
+        // Get the expression inside the statement
+        if let Some(expr) = node.named_child(0) {
+            let kind = expr.kind();
+
+            // These expression types have side effects and are OK
+            let has_side_effect = matches!(
+                kind,
+                "call"
+                    | "assignment"
+                    | "augmented_assignment"
+                    | "await_expression"
+                    | "yield_expression"
+            );
+
+            if !has_side_effect {
+                let severity = ctx
+                    .config()
+                    .get_rule_severity(self.meta.id, self.meta.default_severity);
+                ctx.report_node(
+                    node,
+                    self.meta.id,
+                    severity,
+                    format!("Expression result ({}) is not used", kind),
                 );
             }
         }
