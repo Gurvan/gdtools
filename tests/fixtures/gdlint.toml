@@ -1,0 +1,7 @@
+exclude = [".godot/**", "addons/**"]
+
+[rules]
+disable = ["unnecessary-pass", "variable-name"]
+
+[rules.max-line-length]
+max = 80
