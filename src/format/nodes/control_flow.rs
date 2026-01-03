@@ -6,6 +6,17 @@ use crate::format::context::FormatContext;
 
 /// Format if statement.
 pub fn format_if_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
+    // Check if this is a single-line if statement (body on same line as condition)
+    // If so, output verbatim to preserve the structure
+    if node.start_position().row == node.end_position().row {
+        let start = node.start_position();
+        let line_num = start.row + 1;
+        if let Some(line_content) = ctx.get_source_line(line_num) {
+            ctx.output.push_mapped(line_content.to_string(), line_num);
+        }
+        return;
+    }
+
     let line = node.start_position().row + 1;
     let indent = ctx.indent_str();
 
@@ -177,43 +188,27 @@ pub fn format_while_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
 }
 
 /// Format match statement.
+///
+/// Match statements are complex and can have:
+/// - Multiple patterns per branch: `"a", "b":`
+/// - Single-line bodies: `0: foo()`
+/// - Complex pattern syntax
+///
+/// For now, output match statements verbatim to preserve all cases correctly.
 pub fn format_match_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
-    let line = node.start_position().row + 1;
-    let indent = ctx.indent_str();
-
-    // Get match value - try field name first, then look for expression child
-    let value = node
-        .child_by_field_name("value")
-        .or_else(|| {
-            node.children(&mut node.walk())
-                .find(|c| c.kind() != "match" && c.kind() != ":" && c.kind() != "match_body")
-        })
-        .map(|v| format_expression(v, ctx))
-        .unwrap_or_else(|| "null".to_string());
-
-    ctx.output
-        .push_mapped(format!("{}match {}:", indent, value), line);
-
-    // Format match branches - they may be in a match_body node
-    ctx.indent();
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if child.kind() == "match_branch" || child.kind() == "pattern_section" {
-            format_match_branch(child, ctx);
-        } else if child.kind() == "match_body" {
-            // Pattern sections are inside match_body
-            let mut body_cursor = child.walk();
-            for section in child.children(&mut body_cursor) {
-                if section.kind() == "pattern_section" || section.kind() == "match_branch" {
-                    format_match_branch(section, ctx);
-                }
-            }
+    // Output verbatim to preserve all patterns and body formatting
+    let start = node.start_position();
+    let end = node.end_position();
+    for line_idx in start.row..=end.row {
+        let line_num = line_idx + 1;
+        if let Some(line_content) = ctx.get_source_line(line_num) {
+            ctx.output.push_mapped(line_content.to_string(), line_num);
         }
     }
-    ctx.dedent();
 }
 
 /// Format a match branch.
+#[allow(dead_code)]
 fn format_match_branch(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     let line = node.start_position().row + 1;
     let indent = ctx.indent_str();
@@ -244,6 +239,7 @@ fn format_match_branch(node: Node<'_>, ctx: &mut FormatContext<'_>) {
 }
 
 /// Format a match pattern.
+#[allow(dead_code)]
 fn format_pattern(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
     match node.kind() {
         "pattern_binding" => {

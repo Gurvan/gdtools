@@ -34,7 +34,7 @@ pub fn run_formatter(source: &str, options: &FormatOptions) -> Result<String, Fo
     nodes::format_node(root, &mut ctx);
 
     // Inject comments back
-    ctx.output.inject_comments(&comments);
+    ctx.output.inject_comments(&comments, source);
 
     // Build final output
     Ok(ctx.output.to_string(options))

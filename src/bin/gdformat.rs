@@ -29,6 +29,10 @@ struct Cli {
     #[arg(long)]
     stdin: bool,
 
+    /// Write formatted output to stdout instead of modifying files
+    #[arg(long)]
+    stdout: bool,
+
     /// Maximum line length
     #[arg(short = 'l', long, default_value = "100")]
     line_length: usize,
@@ -87,11 +91,11 @@ fn run() -> Result<bool> {
 
     for path in &cli.paths {
         if path.is_file() {
-            if process_file(path, &options, check, cli.diff, cli.check_ast, cli.check_idempotent, &config.exclude)? {
+            if process_file(path, &options, check, cli.diff, cli.stdout, cli.check_ast, cli.check_idempotent, &config.exclude)? {
                 any_changes = true;
             }
         } else if path.is_dir() {
-            if process_directory(path, &options, check, cli.diff, cli.check_ast, cli.check_idempotent, &config.exclude)? {
+            if process_directory(path, &options, check, cli.diff, cli.stdout, cli.check_ast, cli.check_idempotent, &config.exclude)? {
                 any_changes = true;
             }
         }
@@ -151,6 +155,7 @@ fn process_file(
     options: &FormatOptions,
     check: bool,
     diff: bool,
+    stdout: bool,
     check_ast: bool,
     check_idempotent: bool,
     excludes: &[String],
@@ -197,6 +202,13 @@ fn process_file(
         return Ok(changed);
     }
 
+    if stdout {
+        io::stdout()
+            .write_all(formatted.as_bytes())
+            .into_diagnostic()?;
+        return Ok(changed);
+    }
+
     // Write formatted output
     if changed {
         std::fs::write(path, &formatted).into_diagnostic()?;
@@ -211,6 +223,7 @@ fn process_directory(
     options: &FormatOptions,
     check: bool,
     diff: bool,
+    stdout: bool,
     check_ast: bool,
     check_idempotent: bool,
     excludes: &[String],
@@ -224,7 +237,7 @@ fn process_directory(
         let file_path = entry.path();
 
         if file_path.extension().map(|e| e == "gd").unwrap_or(false) {
-            if process_file(&file_path.to_path_buf(), options, check, diff, check_ast, check_idempotent, excludes)? {
+            if process_file(&file_path.to_path_buf(), options, check, diff, stdout, check_ast, check_idempotent, excludes)? {
                 any_changes = true;
             }
         }

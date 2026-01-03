@@ -72,6 +72,19 @@ fn test_inferred_type_variable() {
 }
 
 #[test]
+fn test_multiline_variable_with_comments() {
+    // Multiline arrays with comments should be preserved verbatim
+    let input = r#"var ITEMS = [
+	"Item1",
+	# Commented out item
+	"Item2",
+]
+"#;
+    assert_eq!(format(input), input);
+    assert_ast_equivalent(input);
+}
+
+#[test]
 fn test_const_statement() {
     assert_eq!(format("const X:int=1\n"), "const X: int = 1\n");
     assert_eq!(format("const   X   =   100\n"), "const X = 100\n");
@@ -158,9 +171,10 @@ fn test_array_literal() {
 
 #[test]
 fn test_dictionary_literal() {
-    // TODO: Dictionary pair formatting needs more investigation of tree-sitter node types
-    // For now, just verify it doesn't crash and empty dict works
-    let _ = format("var x = {a:1,b:2}\n");
+    // Per style guide: single-line dictionaries have space after { and before }
+    assert_eq!(format("var x = {a:1,b:2}\n"), "var x = { a: 1, b: 2 }\n");
+    assert_eq!(format("var x = {a: 1, b: 2}\n"), "var x = { a: 1, b: 2 }\n");
+    assert_eq!(format("var x = { a: 1, b: 2 }\n"), "var x = { a: 1, b: 2 }\n");
     assert_eq!(format("var x = {}\n"), "var x = {}\n");
 }
 
@@ -225,6 +239,45 @@ fn test_string_concatenation() {
 fn test_comparison_operators() {
     assert_eq!(format("if x!=OK:\n\tpass\n"), "if x != OK:\n\tpass\n");
     assert_eq!(format("if x==1:\n\tpass\n"), "if x == 1:\n\tpass\n");
+}
+
+#[test]
+fn test_not_in_operator() {
+    // "not in" is a membership test that should preserve both operands
+    let input = "if path not in paths:\n\tpass\n";
+    assert_eq!(format(input), input);
+    assert_ast_equivalent(input);
+}
+
+#[test]
+fn test_in_operator() {
+    // "in" is a membership test
+    let input = "if key in dictionary:\n\tpass\n";
+    assert_eq!(format(input), input);
+    assert_ast_equivalent(input);
+}
+
+#[test]
+fn test_single_line_if_with_inline_comment() {
+    // Single-line if statements should be preserved verbatim
+    let input = "func test():\n\tif x == 0: x = 1  # comment\n";
+    assert_eq!(format(input), input);
+    assert_ast_equivalent(input);
+}
+
+#[test]
+fn test_comment_at_end_of_function_stays_in_function() {
+    // Comments at the end of a function should stay inside the function,
+    // not be moved after the blank lines before the next function
+    let input = r#"func foo():
+	do_something()
+	# comment at end of function
+
+
+func bar():
+	pass
+"#;
+    assert_eq!(format(input), input);
 }
 
 #[test]
@@ -382,11 +435,54 @@ fn test_idempotent_fixture() {
 }
 
 // =============================================================================
-// Blank Line Preservation Tests (GDScript Style Guide Compliance)
+// Blank Line Tests (GDScript Style Guide Compliance)
 // =============================================================================
-// Per the official style guide:
-// - "Use one blank line inside functions to separate logical sections"
-// - 2 blank lines between function/class definitions at top level
+// Based on the official GDScript style guide:
+// https://docs.godotengine.org/en/stable/tutorials/scripting/gdscript/gdscript_styleguide.html
+//
+// Key rules:
+// 1. "Surround functions and class definitions with two blank lines"
+// 2. "Use one blank line inside functions to separate logical sections"
+// 3. One blank line between different declaration sections (signal, enum, const, var, @onready)
+
+// -----------------------------------------------------------------------------
+// Rule: Two blank lines between functions
+// -----------------------------------------------------------------------------
+
+#[test]
+fn test_two_blank_lines_between_functions() {
+    // Style guide: "Surround functions and class definitions with two blank lines"
+    let input = "func foo():\n\tpass\n\n\nfunc bar():\n\tpass\n";
+    assert_eq!(format(input), input);
+}
+
+#[test]
+fn test_adds_two_blank_lines_before_function() {
+    // If there's no blank line before a function, add two
+    let input = "var x = 1\nfunc foo():\n\tpass\n";
+    let expected = "var x = 1\n\n\nfunc foo():\n\tpass\n";
+    assert_eq!(format(input), expected);
+}
+
+#[test]
+fn test_adds_two_blank_lines_between_functions() {
+    // If there's only one blank line between functions, add another
+    let input = "func foo():\n\tpass\n\nfunc bar():\n\tpass\n";
+    let expected = "func foo():\n\tpass\n\n\nfunc bar():\n\tpass\n";
+    assert_eq!(format(input), expected);
+}
+
+#[test]
+fn test_no_blank_lines_between_functions_adds_two() {
+    // If there's no blank line between functions, add two
+    let input = "func foo():\n\tpass\nfunc bar():\n\tpass\n";
+    let expected = "func foo():\n\tpass\n\n\nfunc bar():\n\tpass\n";
+    assert_eq!(format(input), expected);
+}
+
+// -----------------------------------------------------------------------------
+// Rule: One blank line within functions to separate logical sections
+// -----------------------------------------------------------------------------
 
 #[test]
 fn test_blank_lines_within_function_preserved() {
@@ -396,10 +492,91 @@ fn test_blank_lines_within_function_preserved() {
 }
 
 #[test]
+fn test_multiple_blank_lines_within_function_collapsed() {
+    // More than 1 blank line within function should be collapsed to 1
+    let input = "func foo():\n\tvar x = 1\n\n\n\n\tvar y = 2\n";
+    let expected = "func foo():\n\tvar x = 1\n\n\tvar y = 2\n";
+    assert_eq!(format(input), expected);
+}
+
+// -----------------------------------------------------------------------------
+// Rule: Blank lines between declaration sections
+// -----------------------------------------------------------------------------
+
+#[test]
+fn test_blank_line_after_extends() {
+    // Based on style guide examples: one blank line after extends before signals/vars
+    let input = "extends Node\nvar x = 1\n";
+    let expected = "extends Node\n\nvar x = 1\n";
+    assert_eq!(format(input), expected);
+}
+
+#[test]
+fn test_blank_line_after_class_name_extends() {
+    // class_name and extends should be grouped, then blank line before declarations
+    let input = "class_name MyClass\nextends Node\nvar x = 1\n";
+    let expected = "class_name MyClass\nextends Node\n\nvar x = 1\n";
+    assert_eq!(format(input), expected);
+}
+
+#[test]
+fn test_blank_line_after_extends_before_signal() {
+    let input = "extends Node\nsignal my_signal\n";
+    let expected = "extends Node\n\nsignal my_signal\n";
+    assert_eq!(format(input), expected);
+}
+
+#[test]
+fn test_blank_line_between_signal_and_var() {
+    // One blank line between different declaration types
+    let input = "signal my_signal\nvar x = 1\n";
+    let expected = "signal my_signal\n\nvar x = 1\n";
+    assert_eq!(format(input), expected);
+}
+
+#[test]
+fn test_blank_line_between_const_and_var() {
+    let input = "const MAX = 100\nvar x = 1\n";
+    let expected = "const MAX = 100\n\nvar x = 1\n";
+    assert_eq!(format(input), expected);
+}
+
+#[test]
+fn test_blank_line_between_enum_and_const() {
+    let input = "enum State { IDLE, RUNNING }\nconst MAX = 100\n";
+    let expected = "enum State { IDLE, RUNNING }\n\nconst MAX = 100\n";
+    assert_eq!(format(input), expected);
+}
+
+#[test]
+fn test_no_blank_line_between_same_declaration_type() {
+    // Variables of the same type should be grouped without blank lines
+    let input = "var x = 1\nvar y = 2\nvar z = 3\n";
+    assert_eq!(format(input), input);
+}
+
+#[test]
+fn test_no_blank_line_between_signals() {
+    let input = "signal sig1\nsignal sig2\nsignal sig3\n";
+    assert_eq!(format(input), input);
+}
+
+#[test]
+fn test_no_blank_line_between_consts() {
+    let input = "const A = 1\nconst B = 2\nconst C = 3\n";
+    assert_eq!(format(input), input);
+}
+
+#[test]
 fn test_blank_lines_between_toplevel_vars_preserved() {
+    // User-added blank lines for logical grouping should be preserved
     let input = "extends Node\n\nvar gltf := GLTFDocument.new()\nvar gltf_state := GLTFState.new()\n\nvar key_remap := {}\n";
     assert_eq!(format(input), input);
 }
+
+// -----------------------------------------------------------------------------
+// Rule: Collapse excessive blank lines
+// -----------------------------------------------------------------------------
 
 #[test]
 fn test_multiple_blank_lines_collapsed_to_max() {
@@ -407,12 +584,11 @@ fn test_multiple_blank_lines_collapsed_to_max() {
     let input = "extends Node\n\n\n\n\nvar x = 1\n";
     let expected = "extends Node\n\n\nvar x = 1\n";
     assert_eq!(format(input), expected);
-
-    // More than 1 blank line within function should be collapsed to 1
-    let input2 = "func foo():\n\tvar x = 1\n\n\n\n\tvar y = 2\n";
-    let expected2 = "func foo():\n\tvar x = 1\n\n\tvar y = 2\n";
-    assert_eq!(format(input2), expected2);
 }
+
+// -----------------------------------------------------------------------------
+// Rule: Inline comments with two spaces
+// -----------------------------------------------------------------------------
 
 #[test]
 fn test_inline_comment_two_spaces() {
@@ -421,4 +597,51 @@ fn test_inline_comment_two_spaces() {
     assert_eq!(format(input), input);
     // Single space should be corrected to two spaces
     assert_eq!(format("var x = 1 # comment\n"), "var x = 1  # comment\n");
+}
+
+// -----------------------------------------------------------------------------
+// Complete class formatting (based on style guide example)
+// -----------------------------------------------------------------------------
+
+#[test]
+fn test_complete_class_formatting() {
+    // This matches the structure from the official style guide example
+    let input = r#"class_name StateMachine
+extends Node
+
+signal state_changed(previous, new)
+
+@export var initial_state: Node
+
+var is_active = true
+
+@onready var _state = initial_state
+
+
+func _init():
+	pass
+
+
+func _ready():
+	state_changed.connect(_on_state_changed)
+
+
+func _on_state_changed(previous, new):
+	print("state changed")
+"#;
+    assert_eq!(format(input), input);
+}
+
+#[test]
+fn test_fullfile_fixture_ast_equivalence() {
+    let source = include_str!("fixtures/format/fullfile.gd");
+    assert_ast_equivalent(source);
+}
+
+#[test]
+fn test_fullfile_fixture_idempotent() {
+    let source = include_str!("fixtures/format/fullfile.gd");
+    let formatted_once = format(source);
+    let formatted_twice = format(&formatted_once);
+    assert_eq!(formatted_once, formatted_twice, "Formatting fullfile.gd is not idempotent");
 }

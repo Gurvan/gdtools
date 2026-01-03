@@ -110,25 +110,70 @@ fn format_source_file(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     }
 }
 
-/// Determine the minimum blank lines required between two nodes.
+/// Determine the minimum blank lines required between two nodes at top level.
+///
+/// Based on the GDScript style guide:
+/// - "Surround functions and class definitions with two blank lines"
+/// - One blank line between different declaration sections (signal, enum, const, var)
+/// - class_name/extends are grouped together, then one blank line before declarations
 fn blank_lines_between(prev: &str, next: &str, is_top_level: bool) -> usize {
     // Functions and classes get 2 blank lines at top level, 1 within classes
-    let is_definition = |kind: &str| {
-        matches!(
-            kind,
-            "function_definition" | "class_definition" | "enum_definition"
-        )
+    let is_function_or_class = |kind: &str| {
+        matches!(kind, "function_definition" | "class_definition")
     };
 
-    if is_definition(prev) || is_definition(next) {
-        if is_top_level {
-            2
-        } else {
-            1
-        }
-    } else {
-        0
+    // If either is a function or class definition, use 2 blank lines at top level
+    if is_function_or_class(prev) || is_function_or_class(next) {
+        return if is_top_level { 2 } else { 1 };
     }
+
+    // Not top level - no required blank lines between declarations
+    if !is_top_level {
+        return 0;
+    }
+
+    // At top level: determine declaration categories for spacing rules
+    // Different categories get 1 blank line between them; same category = no blank line
+    let declaration_category = |kind: &str| -> u8 {
+        match kind {
+            // Category 0: File header (class_name, extends) - grouped together
+            "class_name_statement" | "extends_statement" => 0,
+            // Category 1: Signals
+            "signal_statement" => 1,
+            // Category 2: Enums
+            "enum_definition" => 2,
+            // Category 3: Constants
+            "const_statement" => 3,
+            // Category 4: Variables (including @export and @onready - we can't distinguish
+            // them here since annotations are separate nodes, but grouping all vars together
+            // is close enough to the style guide examples)
+            "variable_statement" => 4,
+            // Other/unknown nodes
+            _ => 99,
+        }
+    };
+
+    let prev_cat = declaration_category(prev);
+    let next_cat = declaration_category(next);
+
+    // Annotation followed by something: no blank line (annotation is attached to next decl)
+    if prev == "annotation" {
+        return 0;
+    }
+
+    // Something followed by annotation: add 1 blank line
+    // (We can't see what the annotation wraps, so conservatively add spacing)
+    if next == "annotation" {
+        return 1;
+    }
+
+    // Different categories get 1 blank line between them
+    if prev_cat != next_cat {
+        return 1;
+    }
+
+    // Same category: no required blank line
+    0
 }
 
 /// Output a node verbatim from source (for skipped regions or unhandled nodes).

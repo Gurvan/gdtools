@@ -99,20 +99,69 @@ impl FormattedOutput {
     }
 
     /// Inject comments back into the output.
-    pub fn inject_comments(&mut self, comments: &Comments) {
-        // Inject standalone comments first (by source line)
+    pub fn inject_comments(&mut self, comments: &Comments, source: &str) {
+        // Collect all source lines that were already output (for verbatim content)
+        let mut already_output: std::collections::HashSet<usize> = std::collections::HashSet::new();
+        for line in &self.lines {
+            if let Some(src_line) = line.source_line {
+                already_output.insert(src_line);
+            }
+        }
+
+        // Build a lookup for what source line each output line corresponds to
+        // We'll inject comments by looking at the source line context
         let mut new_lines: Vec<FormattedLine> = Vec::with_capacity(self.lines.len());
         let mut last_source_line = 0;
+        let source_lines: Vec<&str> = source.lines().collect();
 
         for line in self.lines.drain(..) {
-            // Check for standalone comments between last line and this one
+            // Before processing this line, check if we need to inject comments
+            // between the last source line and the current position
             if let Some(src_line) = line.source_line {
+                // Inject any standalone comments that appear between last_source_line and src_line
                 for comment_line in (last_source_line + 1)..src_line {
+                    // Skip if this line was already output (part of verbatim content)
+                    if already_output.contains(&comment_line) {
+                        continue;
+                    }
                     if let Some(comment) = comments.get_standalone(comment_line) {
                         new_lines.push(FormattedLine::with_source(comment.clone(), comment_line));
                     }
                 }
                 last_source_line = src_line;
+            } else {
+                // This is a blank line (no source mapping)
+                // Before adding it, check if there are comments that should appear first
+                // We need to find the next source-mapped line to know the range
+                // But we can only look ahead, which is expensive. Instead, we'll inject
+                // comments that immediately follow the last source line.
+
+                // Find comments that appear right after last_source_line
+                // These should go before any blank lines we're about to add
+                let mut comment_line = last_source_line + 1;
+                while comment_line <= source_lines.len() {
+                    // Stop if this line is not a comment or blank
+                    if let Some(src) = source_lines.get(comment_line - 1) {
+                        let trimmed = src.trim();
+                        if trimmed.is_empty() {
+                            // Blank line - stop looking for more comments here
+                            break;
+                        }
+                        if !trimmed.starts_with('#') {
+                            // Non-comment, non-blank - stop
+                            break;
+                        }
+                        // It's a comment - inject it if not already output
+                        if !already_output.contains(&comment_line) {
+                            if let Some(comment) = comments.get_standalone(comment_line) {
+                                new_lines.push(FormattedLine::with_source(comment.clone(), comment_line));
+                                already_output.insert(comment_line);
+                            }
+                        }
+                        last_source_line = comment_line;
+                    }
+                    comment_line += 1;
+                }
             }
 
             // Check for inline comment on this line
@@ -120,6 +169,9 @@ impl FormattedOutput {
                 if let Some(comment) = comments.get_inline(src_line) {
                     if line.content.is_empty() {
                         comment.clone()
+                    } else if line.content.ends_with(comment) {
+                        // Comment already present (from verbatim output), don't duplicate
+                        line.content
                     } else {
                         format!("{}  {}", line.content, comment)
                     }

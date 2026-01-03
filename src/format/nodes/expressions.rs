@@ -78,7 +78,7 @@ fn node_text<'a>(node: Node<'_>, ctx: &'a FormatContext<'_>) -> &'a str {
     &ctx.source[start..end]
 }
 
-/// Format binary operation: `a + b`, `a * b`, etc.
+/// Format binary operation: `a + b`, `a * b`, `a not in b`, etc.
 fn format_binary_operation(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
     // Try field names first
     let left = node.child_by_field_name("left");
@@ -93,10 +93,30 @@ fn format_binary_operation(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
     }
 
     // Field names didn't work - look at children directly
-    // Binary operations have 3 children: left, operator, right
     let mut cursor = node.walk();
     let children: Vec<_> = node.children(&mut cursor).collect();
 
+    // Handle "not in" operator: 4 children (left, "not", "in", right)
+    if children.len() == 4
+        && children[1].kind() == "not"
+        && children[2].kind() == "in"
+    {
+        let left_text = format_expression(children[0], ctx);
+        let right_text = format_expression(children[3], ctx);
+        return format!("{} not in {}", left_text, right_text);
+    }
+
+    // Handle "is not" operator: 4 children (left, "is", "not", right)
+    if children.len() == 4
+        && children[1].kind() == "is"
+        && children[2].kind() == "not"
+    {
+        let left_text = format_expression(children[0], ctx);
+        let right_text = format_expression(children[3], ctx);
+        return format!("{} is not {}", left_text, right_text);
+    }
+
+    // Standard binary operations: 3 children (left, operator, right)
     if children.len() >= 3 {
         let left_text = format_expression(children[0], ctx);
         let op_text = node_text(children[1], ctx).trim();
@@ -261,6 +281,8 @@ fn format_subscript(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
 }
 
 /// Format array literal: `[1, 2, 3]`
+///
+/// Preserves multiline arrays to maintain readability and inline comments.
 fn format_array(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
     let mut cursor = node.walk();
     let children: Vec<_> = node
@@ -272,16 +294,29 @@ fn format_array(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
         return "[]".to_string();
     }
 
+    // Check if the source array was multiline
+    let is_multiline = node.start_position().row != node.end_position().row;
+
+    if is_multiline {
+        // Preserve multiline arrays verbatim to keep structure and comments
+        return node_text(node, ctx).to_string();
+    }
+
     let elements: Vec<String> = children.iter().map(|c| format_expression(*c, ctx)).collect();
     format!("[{}]", elements.join(", "))
 }
 
-/// Format dictionary literal: `{a: 1, b: 2}`
+/// Format dictionary literal: `{ a: 1, b: 2 }`
+///
+/// Per the GDScript style guide:
+/// - Single-line dictionaries should have space after `{` and before `}`
+/// - Multi-line dictionaries have each entry on its own line with trailing comma
 fn format_dictionary(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
     let mut cursor = node.walk();
+    // Dictionary entries can be "pair" nodes - collect all non-punctuation children
     let children: Vec<_> = node
         .children(&mut cursor)
-        .filter(|c| matches!(c.kind(), "pair" | "dictionary_entry"))
+        .filter(|c| !matches!(c.kind(), "{" | "}" | ","))
         .collect();
 
     if children.is_empty() {
@@ -304,24 +339,40 @@ fn format_dictionary(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
             indent
         )
     } else {
+        // Single-line: add space after { and before } for readability
         let pairs: Vec<String> = children.iter().map(|c| format_pair(*c, ctx)).collect();
-        format!("{{{}}}", pairs.join(", "))
+        format!("{{ {} }}", pairs.join(", "))
     }
 }
 
 /// Format a key-value pair in a dictionary.
 fn format_pair(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
+    // Try field names first
     let key = node.child_by_field_name("key");
     let value = node.child_by_field_name("value");
 
-    match (key, value) {
-        (Some(k), Some(v)) => {
-            let key_text = format_expression(k, ctx);
-            let val_text = format_expression(v, ctx);
-            format!("{}: {}", key_text, val_text)
-        }
-        _ => node_text(node, ctx).to_string(),
+    if let (Some(k), Some(v)) = (key, value) {
+        let key_text = format_expression(k, ctx);
+        let val_text = format_expression(v, ctx);
+        return format!("{}: {}", key_text, val_text);
     }
+
+    // Fallback: look at children directly
+    // Pair structure is typically: key, ":", value
+    let mut cursor = node.walk();
+    let children: Vec<_> = node
+        .children(&mut cursor)
+        .filter(|c| c.kind() != ":")
+        .collect();
+
+    if children.len() >= 2 {
+        let key_text = format_expression(children[0], ctx);
+        let val_text = format_expression(children[1], ctx);
+        return format!("{}: {}", key_text, val_text);
+    }
+
+    // Last resort: return original text
+    node_text(node, ctx).to_string()
 }
 
 /// Format parenthesized expression: `(expr)`

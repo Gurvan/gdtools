@@ -219,9 +219,27 @@ fn format_function_body(node: Node<'_>, ctx: &mut FormatContext<'_>) {
 }
 
 /// Format variable statement: `var x = 1` or `var x: int = 1` or `var x := 1`
+/// Also handles variables with getter/setter blocks.
 pub fn format_variable_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     let line = node.start_position().row + 1;
     let indent = ctx.indent_str();
+
+    // Check for multiline statements (getter/setter, multiline arrays, etc.)
+    // Output these verbatim to preserve structure and comments
+    let is_multiline = node.start_position().row != node.end_position().row;
+
+    if is_multiline {
+        // Multiline variable statement - output verbatim to preserve the block
+        let start = node.start_position();
+        let end = node.end_position();
+        for line_idx in start.row..=end.row {
+            let line_num = line_idx + 1;
+            if let Some(line_content) = ctx.get_source_line(line_num) {
+                ctx.output.push_mapped(line_content.to_string(), line_num);
+            }
+        }
+        return;
+    }
 
     // Check for annotations (export, onready)
     // The tree structure is: variable_statement -> annotations -> annotation
@@ -289,8 +307,26 @@ pub fn format_variable_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
 
 /// Format const statement: `const X = 1` or `const X: int = 1`
 pub fn format_const_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
+    // Check if the const spans multiple lines (e.g., multiline array)
+    // If so, output verbatim to preserve structure and comments
+    if node.start_position().row != node.end_position().row {
+        let start = node.start_position();
+        let end = node.end_position();
+        for line_idx in start.row..=end.row {
+            let line_num = line_idx + 1;
+            if let Some(line_content) = ctx.get_source_line(line_num) {
+                ctx.output.push_mapped(line_content.to_string(), line_num);
+            }
+        }
+        return;
+    }
+
     let line = node.start_position().row + 1;
     let indent = ctx.indent_str();
+
+    // Check if this is an inferred type constant (:=)
+    let source_text = node_text(node, ctx);
+    let is_inferred = source_text.contains(":=");
 
     // Get constant name
     let name = node
@@ -298,20 +334,33 @@ pub fn format_const_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
         .map(|n| node_text(n, ctx))
         .unwrap_or("_");
 
-    // Get type hint
-    let type_hint = node
-        .child_by_field_name("type")
-        .map(|t| format!(": {}", node_text(t, ctx)))
-        .unwrap_or_default();
-
     // Get value
-    let value = node
-        .child_by_field_name("value")
-        .map(|v| format!(" = {}", format_expression(v, ctx)))
-        .unwrap_or_default();
+    let value_node = node.child_by_field_name("value");
 
-    ctx.output
-        .push_mapped(format!("{}const {}{}{}", indent, name, type_hint, value), line);
+    if is_inferred {
+        // Inferred type: const X := value
+        let value = value_node
+            .map(|v| format_expression(v, ctx))
+            .unwrap_or_default();
+        ctx.output.push_mapped(
+            format!("{}const {} := {}", indent, name, value),
+            line,
+        );
+    } else {
+        // Get type hint
+        let type_hint = node
+            .child_by_field_name("type")
+            .map(|t| format!(": {}", node_text(t, ctx)))
+            .unwrap_or_default();
+
+        // Get value
+        let value = value_node
+            .map(|v| format!(" = {}", format_expression(v, ctx)))
+            .unwrap_or_default();
+
+        ctx.output
+            .push_mapped(format!("{}const {}{}{}", indent, name, type_hint, value), line);
+    }
 }
 
 /// Format signal statement: `signal my_signal` or `signal my_signal(arg1, arg2)`
@@ -335,16 +384,23 @@ pub fn format_signal_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
         .push_mapped(format!("{}signal {}{}", indent, name, params), line);
 }
 
-/// Format signal parameters (simpler than function params).
+/// Format signal parameters.
+/// Handles both simple `signal foo(a, b)` and typed `signal foo(a: int, b: String)`.
 fn format_signal_parameters(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
     let mut cursor = node.walk();
     let params: Vec<_> = node
         .children(&mut cursor)
-        .filter(|c| c.kind() == "identifier" || c.kind() == "name")
+        .filter(|c| {
+            // Include parameter nodes (typed or untyped) and standalone identifiers
+            matches!(
+                c.kind(),
+                "identifier" | "name" | "typed_parameter" | "typed_identifier" | "parameter"
+            )
+        })
         .collect();
 
-    let names: Vec<&str> = params.iter().map(|p| node_text(*p, ctx)).collect();
-    names.join(", ")
+    let formatted: Vec<String> = params.iter().map(|p| format_parameter(*p, ctx)).collect();
+    formatted.join(", ")
 }
 
 /// Format enum definition.
