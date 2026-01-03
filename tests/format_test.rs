@@ -1,4 +1,5 @@
-use gdlint::format::{run_formatter, FormatOptions};
+use gdlint::format::{compare_ast_with_source, run_formatter, AstCheckResult, FormatOptions};
+use tree_sitter::Parser;
 
 fn format(source: &str) -> String {
     run_formatter(source, &FormatOptions::default()).unwrap()
@@ -11,6 +12,37 @@ fn format_with_spaces(source: &str, spaces: usize) -> String {
 // Helper to check formatting doesn't crash and produces valid output
 fn format_ok(source: &str) -> bool {
     run_formatter(source, &FormatOptions::default()).is_ok()
+}
+
+fn parse(source: &str) -> tree_sitter::Tree {
+    let mut parser = Parser::new();
+    parser
+        .set_language(&tree_sitter_gdscript::LANGUAGE.into())
+        .unwrap();
+    parser.parse(source, None).unwrap()
+}
+
+/// Assert that formatting preserves AST equivalence.
+/// This is the key invariant: formatting should not change the meaning of code.
+fn assert_ast_equivalent(source: &str) {
+    let formatted = format(source);
+    let original_tree = parse(source);
+    let formatted_tree = parse(&formatted);
+
+    let result = compare_ast_with_source(&original_tree, source, &formatted_tree, &formatted);
+    match result {
+        AstCheckResult::Equivalent => {}
+        AstCheckResult::Different { path, difference } => {
+            panic!(
+                "AST changed after formatting!\n\
+                 Path: {}\n\
+                 Difference: {}\n\
+                 Original:\n{}\n\
+                 Formatted:\n{}",
+                path, difference, source, formatted
+            );
+        }
+    }
 }
 
 #[test]
@@ -238,3 +270,113 @@ fn test_typed_default_parameter_multiple() {
     assert_eq!(format(input), input);
 }
 
+// =============================================================================
+// AST Equivalence Tests
+// =============================================================================
+// These tests verify that formatting does not change the AST structure.
+// This is the key safety invariant for the formatter.
+
+#[test]
+fn test_ast_equivalence_basic() {
+    // Basic statements
+    assert_ast_equivalent("extends Node2D\n");
+    assert_ast_equivalent("class_name MyClass\n");
+    assert_ast_equivalent("var x = 1\n");
+    assert_ast_equivalent("var x: int = 1\n");
+    assert_ast_equivalent("var x := 1\n");
+    assert_ast_equivalent("const MAX = 100\n");
+    assert_ast_equivalent("signal my_signal\n");
+    assert_ast_equivalent("signal data_received(data, sender)\n");
+}
+
+#[test]
+fn test_ast_equivalence_functions() {
+    assert_ast_equivalent("func foo():\n\tpass\n");
+    assert_ast_equivalent("func foo(a: int, b: String) -> void:\n\treturn\n");
+    assert_ast_equivalent("func foo(x = 5, y: int = 10):\n\tpass\n");
+}
+
+#[test]
+fn test_static_function() {
+    let input = "static func bar():\n\tpass\n";
+    let output = format(input);
+    assert!(output.starts_with("static func"), "static keyword should be preserved, got: {}", output);
+    assert_ast_equivalent(input);
+}
+
+#[test]
+fn test_annotations() {
+    // @export annotation should be preserved
+    let input = "@export var speed: float = 10.0\n";
+    let output = format(input);
+    assert!(output.contains("@export"), "@export should be preserved, got: {}", output);
+    assert_ast_equivalent(input);
+}
+
+#[test]
+fn test_match_statement() {
+    let input = "match x:\n\t1:\n\t\tpass\n\t_:\n\t\tpass\n";
+    let output = format(input);
+    assert!(output.contains("match x:"), "match statement should be preserved, got: {}", output);
+    assert_ast_equivalent(input);
+}
+
+#[test]
+fn test_ast_equivalence_control_flow() {
+    assert_ast_equivalent("if x:\n\tpass\n");
+    assert_ast_equivalent("if x:\n\tpass\nelse:\n\tpass\n");
+    assert_ast_equivalent("if x:\n\tpass\nelif y:\n\tpass\nelse:\n\tpass\n");
+    assert_ast_equivalent("for i in range(10):\n\tpass\n");
+    assert_ast_equivalent("while true:\n\tbreak\n");
+    assert_ast_equivalent("match x:\n\t1:\n\t\tpass\n\t_:\n\t\tpass\n");
+}
+
+#[test]
+fn test_ast_equivalence_expressions() {
+    assert_ast_equivalent("var x = 1 + 2\n");
+    assert_ast_equivalent("var x = a && b\n");
+    assert_ast_equivalent("var x = a < b\n");
+    assert_ast_equivalent("var x = -a\n");
+    assert_ast_equivalent("var x = !a\n");
+    assert_ast_equivalent("var x = foo()\n");
+    assert_ast_equivalent("var x = obj.method()\n");
+    assert_ast_equivalent("var x = arr[0]\n");
+    assert_ast_equivalent("var x = [1, 2, 3]\n");
+    assert_ast_equivalent("var x = {a: 1, b: 2}\n");
+}
+
+#[test]
+fn test_ast_equivalence_whitespace_changes() {
+    // These have different whitespace but should produce same AST
+    assert_ast_equivalent("var x=1\n");
+    assert_ast_equivalent("var   x   =   1\n");
+    assert_ast_equivalent("func foo(a:int,b:String):\n\tpass\n");
+    assert_ast_equivalent("if x==1:\n\tpass\n");
+}
+
+#[test]
+fn test_ast_equivalence_multiline_dict() {
+    // Multiline dictionary should have same AST as single-line
+    let multiline = r#"var d = {
+	a: 1,
+	b: 2,
+}
+"#;
+    assert_ast_equivalent(multiline);
+}
+
+#[test]
+fn test_ast_equivalence_fixture() {
+    // Format the test fixture file and verify AST equivalence
+    let source = include_str!("fixtures/format/test_basic.gd");
+    assert_ast_equivalent(source);
+}
+
+#[test]
+fn test_idempotent_fixture() {
+    // Formatting twice should give the same result as formatting once
+    let source = include_str!("fixtures/format/test_basic.gd");
+    let formatted_once = format(source);
+    let formatted_twice = format(&formatted_once);
+    assert_eq!(formatted_once, formatted_twice, "Formatting is not idempotent");
+}

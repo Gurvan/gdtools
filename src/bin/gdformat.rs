@@ -7,7 +7,8 @@ use ignore::WalkBuilder;
 use miette::{miette, IntoDiagnostic, Result};
 
 use gdlint::config::load_config;
-use gdlint::format::{run_formatter, FormatOptions, IndentStyle};
+use gdlint::format::{compare_ast_with_source, run_formatter, AstCheckResult, FormatOptions, IndentStyle};
+use gdlint::parser;
 
 #[derive(Parser)]
 #[command(name = "gdformat", version, about = "A fast GDScript formatter for Godot 4.x")]
@@ -39,6 +40,14 @@ struct Cli {
     /// Path to configuration file
     #[arg(long)]
     config: Option<PathBuf>,
+
+    /// Verify AST equivalence after formatting (catch formatter bugs)
+    #[arg(long)]
+    check_ast: bool,
+
+    /// Verify formatting is idempotent (formatting twice gives same result)
+    #[arg(long)]
+    check_idempotent: bool,
 }
 
 fn main() -> ExitCode {
@@ -63,9 +72,12 @@ fn run() -> Result<bool> {
     // Build format options from CLI or config
     let options = build_options(&cli)?;
 
+    // --check-ast and --check-idempotent imply --check (never write files when verifying)
+    let check = cli.check || cli.check_ast || cli.check_idempotent;
+
     // Handle stdin mode
     if cli.stdin {
-        return format_stdin(&options, cli.check, cli.diff);
+        return format_stdin(&options, check, cli.diff, cli.check_ast, cli.check_idempotent);
     }
 
     // Load config for exclude patterns
@@ -75,11 +87,11 @@ fn run() -> Result<bool> {
 
     for path in &cli.paths {
         if path.is_file() {
-            if process_file(path, &options, cli.check, cli.diff, &config.exclude)? {
+            if process_file(path, &options, check, cli.diff, cli.check_ast, cli.check_idempotent, &config.exclude)? {
                 any_changes = true;
             }
         } else if path.is_dir() {
-            if process_directory(path, &options, cli.check, cli.diff, &config.exclude)? {
+            if process_directory(path, &options, check, cli.diff, cli.check_ast, cli.check_idempotent, &config.exclude)? {
                 any_changes = true;
             }
         }
@@ -102,13 +114,21 @@ fn build_options(cli: &Cli) -> Result<FormatOptions> {
     })
 }
 
-fn format_stdin(options: &FormatOptions, check: bool, diff: bool) -> Result<bool> {
+fn format_stdin(options: &FormatOptions, check: bool, diff: bool, check_ast: bool, check_idempotent: bool) -> Result<bool> {
     let mut source = String::new();
     io::stdin()
         .read_to_string(&mut source)
         .into_diagnostic()?;
 
     let formatted = run_formatter(&source, options).map_err(|e| miette!("{}", e))?;
+
+    if check_ast {
+        verify_ast_equivalence("<stdin>", &source, &formatted)?;
+    }
+
+    if check_idempotent {
+        verify_idempotent("<stdin>", &formatted, options)?;
+    }
 
     if check {
         return Ok(source != formatted);
@@ -131,6 +151,8 @@ fn process_file(
     options: &FormatOptions,
     check: bool,
     diff: bool,
+    check_ast: bool,
+    check_idempotent: bool,
     excludes: &[String],
 ) -> Result<bool> {
     // Check exclusions
@@ -150,6 +172,14 @@ fn process_file(
             return Ok(false);
         }
     };
+
+    if check_ast {
+        verify_ast_equivalence(&path.display().to_string(), &source, &formatted)?;
+    }
+
+    if check_idempotent {
+        verify_idempotent(&path.display().to_string(), &formatted, options)?;
+    }
 
     let changed = source != formatted;
 
@@ -181,6 +211,8 @@ fn process_directory(
     options: &FormatOptions,
     check: bool,
     diff: bool,
+    check_ast: bool,
+    check_idempotent: bool,
     excludes: &[String],
 ) -> Result<bool> {
     let mut any_changes = false;
@@ -192,7 +224,7 @@ fn process_directory(
         let file_path = entry.path();
 
         if file_path.extension().map(|e| e == "gd").unwrap_or(false) {
-            if process_file(&file_path.to_path_buf(), options, check, diff, excludes)? {
+            if process_file(&file_path.to_path_buf(), options, check, diff, check_ast, check_idempotent, excludes)? {
                 any_changes = true;
             }
         }
@@ -224,5 +256,33 @@ fn print_diff(filename: &str, original: &str, formatted: &str) {
                 print!("{}{}", sign, change);
             }
         }
+    }
+}
+
+fn verify_ast_equivalence(filename: &str, original: &str, formatted: &str) -> Result<()> {
+    let original_tree = parser::parse(original).map_err(|e| miette!("Parse error: {}", e))?;
+    let formatted_tree = parser::parse(formatted).map_err(|e| miette!("Parse error: {}", e))?;
+
+    match compare_ast_with_source(&original_tree, original, &formatted_tree, formatted) {
+        AstCheckResult::Equivalent => Ok(()),
+        AstCheckResult::Different { path, difference } => Err(miette!(
+            "AST changed after formatting {}!\nPath: {}\nDifference: {}",
+            filename,
+            path,
+            difference
+        )),
+    }
+}
+
+fn verify_idempotent(filename: &str, formatted: &str, options: &FormatOptions) -> Result<()> {
+    let formatted_twice = run_formatter(formatted, options).map_err(|e| miette!("{}", e))?;
+
+    if formatted == formatted_twice {
+        Ok(())
+    } else {
+        Err(miette!(
+            "Formatting is not idempotent for {}!\nFormatting the output again produces different results.",
+            filename
+        ))
     }
 }

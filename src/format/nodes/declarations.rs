@@ -71,7 +71,7 @@ pub fn format_function_definition(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     // Check for static modifier
     let is_static = node
         .children(&mut node.walk())
-        .any(|c| c.kind() == "static");
+        .any(|c| c.kind() == "static_keyword");
 
     // Get function name
     let name = node
@@ -224,17 +224,25 @@ pub fn format_variable_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     let indent = ctx.indent_str();
 
     // Check for annotations (export, onready)
-    let mut cursor = node.walk();
-    let annotations: Vec<_> = node
-        .children(&mut cursor)
-        .filter(|c| c.kind() == "annotation")
-        .collect();
-
-    for ann in &annotations {
-        let ann_line = ann.start_position().row + 1;
-        let ann_text = node_text(*ann, ctx).trim();
-        ctx.output.push_mapped(format!("{}{}", indent, ann_text), ann_line);
-    }
+    // The tree structure is: variable_statement -> annotations -> annotation
+    let annotations_prefix = if let Some(annotations_node) = node
+        .children(&mut node.walk())
+        .find(|c| c.kind() == "annotations")
+    {
+        let mut cursor = annotations_node.walk();
+        let anns: Vec<_> = annotations_node
+            .children(&mut cursor)
+            .filter(|c| c.kind() == "annotation")
+            .map(|a| node_text(a, ctx).trim().to_string())
+            .collect();
+        if anns.is_empty() {
+            String::new()
+        } else {
+            format!("{} ", anns.join(" "))
+        }
+    } else {
+        String::new()
+    };
 
     // Check if this is an inferred type assignment (:=)
     let source_text = node_text(node, ctx);
@@ -254,8 +262,10 @@ pub fn format_variable_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
         let value = value_node
             .map(|v| format_expression(v, ctx))
             .unwrap_or_default();
-        ctx.output
-            .push_mapped(format!("{}var {} := {}", indent, name, value), line);
+        ctx.output.push_mapped(
+            format!("{}{}var {} := {}", indent, annotations_prefix, name, value),
+            line,
+        );
     } else {
         // Explicit type or no type
         let type_hint = node
@@ -267,8 +277,13 @@ pub fn format_variable_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
             .map(|v| format!(" = {}", format_expression(v, ctx)))
             .unwrap_or_default();
 
-        ctx.output
-            .push_mapped(format!("{}var {}{}{}", indent, name, type_hint, value), line);
+        ctx.output.push_mapped(
+            format!(
+                "{}{}var {}{}{}",
+                indent, annotations_prefix, name, type_hint, value
+            ),
+            line,
+        );
     }
 }
 

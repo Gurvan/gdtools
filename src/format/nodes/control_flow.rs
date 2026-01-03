@@ -181,21 +181,33 @@ pub fn format_match_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     let line = node.start_position().row + 1;
     let indent = ctx.indent_str();
 
-    // Get match value
+    // Get match value - try field name first, then look for expression child
     let value = node
         .child_by_field_name("value")
+        .or_else(|| {
+            node.children(&mut node.walk())
+                .find(|c| c.kind() != "match" && c.kind() != ":" && c.kind() != "match_body")
+        })
         .map(|v| format_expression(v, ctx))
         .unwrap_or_else(|| "null".to_string());
 
     ctx.output
         .push_mapped(format!("{}match {}:", indent, value), line);
 
-    // Format match branches
+    // Format match branches - they may be in a match_body node
     ctx.indent();
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "match_branch" || child.kind() == "pattern_section" {
             format_match_branch(child, ctx);
+        } else if child.kind() == "match_body" {
+            // Pattern sections are inside match_body
+            let mut body_cursor = child.walk();
+            for section in child.children(&mut body_cursor) {
+                if section.kind() == "pattern_section" || section.kind() == "match_branch" {
+                    format_match_branch(section, ctx);
+                }
+            }
         }
     }
     ctx.dedent();
@@ -206,19 +218,27 @@ fn format_match_branch(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     let line = node.start_position().row + 1;
     let indent = ctx.indent_str();
 
-    // Get pattern(s)
+    // Get pattern - try field name first, then first named child
     let pattern = node
         .child_by_field_name("pattern")
+        .or_else(|| node.named_child(0))
         .map(|p| format_pattern(p, ctx))
         .unwrap_or_else(|| "_".to_string());
 
     ctx.output
         .push_mapped(format!("{}{}:", indent, pattern), line);
 
-    // Format body
-    if let Some(body) = node.child_by_field_name("body") {
+    // Format body - try field name first, then look for body node
+    let body = node
+        .child_by_field_name("body")
+        .or_else(|| {
+            node.children(&mut node.walk())
+                .find(|c| c.kind() == "body")
+        });
+
+    if let Some(body_node) = body {
         ctx.indent();
-        format_block(body, ctx);
+        format_block(body_node, ctx);
         ctx.dedent();
     }
 }

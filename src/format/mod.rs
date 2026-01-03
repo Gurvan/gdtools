@@ -1,3 +1,4 @@
+pub mod ast_check;
 mod comments;
 mod context;
 mod nodes;
@@ -5,6 +6,7 @@ mod options;
 mod output;
 mod skip_regions;
 
+pub use ast_check::{compare_ast_with_source, AstCheckResult};
 pub use context::FormatContext;
 pub use options::{FormatOptions, IndentStyle};
 pub use output::{FormattedLine, FormattedOutput};
