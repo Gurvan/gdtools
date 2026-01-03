@@ -108,84 +108,130 @@ impl FormattedOutput {
             }
         }
 
-        // Build a lookup for what source line each output line corresponds to
-        // We'll inject comments by looking at the source line context
+        let source_lines: Vec<&str> = source.lines().collect();
         let mut new_lines: Vec<FormattedLine> = Vec::with_capacity(self.lines.len());
         let mut last_source_line = 0;
-        let source_lines: Vec<&str> = source.lines().collect();
 
-        for line in self.lines.drain(..) {
-            // Before processing this line, check if we need to inject comments
-            // between the last source line and the current position
+        // Collect all lines with their indices for look-ahead
+        let lines_vec: Vec<FormattedLine> = self.lines.drain(..).collect();
+
+        for (i, line) in lines_vec.iter().enumerate() {
             if let Some(src_line) = line.source_line {
+                // This line has a source mapping
                 // Inject any standalone comments that appear between last_source_line and src_line
                 for comment_line in (last_source_line + 1)..src_line {
-                    // Skip if this line was already output (part of verbatim content)
                     if already_output.contains(&comment_line) {
                         continue;
                     }
                     if let Some(comment) = comments.get_standalone(comment_line) {
                         new_lines.push(FormattedLine::with_source(comment.clone(), comment_line));
+                        already_output.insert(comment_line);
                     }
                 }
                 last_source_line = src_line;
-            } else {
-                // This is a blank line (no source mapping)
-                // Before adding it, check if there are comments that should appear first
-                // We need to find the next source-mapped line to know the range
-                // But we can only look ahead, which is expensive. Instead, we'll inject
-                // comments that immediately follow the last source line.
 
-                // Find comments that appear right after last_source_line
-                // These should go before any blank lines we're about to add
-                let mut comment_line = last_source_line + 1;
-                while comment_line <= source_lines.len() {
-                    // Stop if this line is not a comment or blank
-                    if let Some(src) = source_lines.get(comment_line - 1) {
-                        let trimmed = src.trim();
-                        if trimmed.is_empty() {
-                            // Blank line - stop looking for more comments here
-                            break;
-                        }
-                        if !trimmed.starts_with('#') {
-                            // Non-comment, non-blank - stop
-                            break;
-                        }
-                        // It's a comment - inject it if not already output
-                        if !already_output.contains(&comment_line) {
-                            if let Some(comment) = comments.get_standalone(comment_line) {
-                                new_lines.push(FormattedLine::with_source(comment.clone(), comment_line));
-                                already_output.insert(comment_line);
-                            }
-                        }
-                        last_source_line = comment_line;
-                    }
-                    comment_line += 1;
-                }
-            }
-
-            // Check for inline comment on this line
-            let content = if let Some(src_line) = line.source_line {
-                if let Some(comment) = comments.get_inline(src_line) {
+                // Add this line with inline comment if present
+                let content = if let Some(comment) = comments.get_inline(src_line) {
                     if line.content.is_empty() {
                         comment.clone()
                     } else if line.content.ends_with(comment) {
-                        // Comment already present (from verbatim output), don't duplicate
-                        line.content
+                        line.content.clone()
                     } else {
                         format!("{}  {}", line.content, comment)
                     }
                 } else {
-                    line.content
-                }
-            } else {
-                line.content
-            };
+                    line.content.clone()
+                };
 
-            new_lines.push(FormattedLine {
-                source_line: line.source_line,
-                content,
-            });
+                new_lines.push(FormattedLine {
+                    source_line: Some(src_line),
+                    content,
+                });
+            } else {
+                // This is a blank line (no source mapping)
+                // Before adding the blank line, check if there are comments that should go before it
+                // Look ahead to find the next source-mapped line
+                let next_src_line = lines_vec[(i + 1)..]
+                    .iter()
+                    .find_map(|l| l.source_line);
+
+                if let Some(next_sl) = next_src_line {
+                    // Determine which comments belong BEFORE the blank lines (with previous code)
+                    // vs AFTER the blank lines (with next code).
+                    //
+                    // Strategy: Find contiguous comment blocks and determine if each block
+                    // belongs before or after the blank lines based on what follows it.
+                    //
+                    // A comment block belongs with PREVIOUS code if there's a blank line
+                    // between it and the next non-comment content.
+
+                    let mut comment_line = last_source_line + 1;
+                    while comment_line < next_sl {
+                        if already_output.contains(&comment_line) {
+                            comment_line += 1;
+                            continue;
+                        }
+
+                        // Check if this is a comment
+                        let is_comment = source_lines.get(comment_line - 1)
+                            .map(|s| s.trim().starts_with('#'))
+                            .unwrap_or(false);
+
+                        if !is_comment {
+                            comment_line += 1;
+                            continue;
+                        }
+
+                        // Found a comment - find the end of this contiguous comment block
+                        let block_start = comment_line;
+                        let mut block_end = comment_line;
+                        while block_end < next_sl {
+                            let next_is_comment = source_lines.get(block_end)
+                                .map(|s| s.trim().starts_with('#'))
+                                .unwrap_or(false);
+                            if next_is_comment {
+                                block_end += 1;
+                            } else {
+                                break;
+                            }
+                        }
+
+                        // Check what follows this comment block
+                        let line_after_block = block_end + 1;
+                        let next_non_blank = (line_after_block..=next_sl)
+                            .find(|&ln| {
+                                source_lines.get(ln - 1)
+                                    .map(|s| !s.trim().is_empty())
+                                    .unwrap_or(false)
+                            });
+
+                        // If there's a blank between the comment block and next content,
+                        // or if there's nothing after (comment at end of gap), inject before blanks
+                        let followed_by_blank = next_non_blank
+                            .map(|nln| nln > line_after_block)
+                            .unwrap_or(true);
+
+                        if followed_by_blank {
+                            // Inject the entire comment block before blank lines
+                            for cl in block_start..=block_end {
+                                if already_output.contains(&cl) {
+                                    continue;
+                                }
+                                if let Some(comment) = comments.get_standalone(cl) {
+                                    new_lines.push(FormattedLine::with_source(comment.clone(), cl));
+                                    already_output.insert(cl);
+                                    last_source_line = cl;
+                                }
+                            }
+                        }
+
+                        comment_line = block_end + 1;
+                    }
+                }
+
+                // Now add the blank line
+                new_lines.push(line.clone());
+            }
         }
 
         self.lines = new_lines;

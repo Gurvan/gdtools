@@ -281,6 +281,61 @@ func bar():
 }
 
 #[test]
+fn test_consecutive_vars_with_inline_comments_no_blank_lines() {
+    // Variables with inline comments should not get blank lines inserted between them
+    let input = r#"var a: int  # comment a
+var b: int  # comment b
+var c: int  # comment c
+"#;
+    assert_eq!(format(input), input);
+}
+
+#[test]
+fn test_trailing_comment_stays_before_blank_lines() {
+    // A comment followed by blank lines belongs with the previous code,
+    // not moved after the blank lines before the next function
+    let input = r#"func foo():
+	do_something()
+	# trailing comment for foo
+
+
+func bar():
+	pass
+"#;
+    assert_eq!(format(input), input);
+}
+
+#[test]
+fn test_header_comment_stays_after_blank_lines() {
+    // A comment immediately followed by code is a header comment
+    // and should stay with the following code (after blank lines)
+    let input = r#"func foo():
+	pass
+
+
+# This is a header comment for bar
+func bar():
+	pass
+"#;
+    assert_eq!(format(input), input);
+}
+
+#[test]
+fn test_multiline_trailing_comment_stays_together() {
+    // Multi-line comments should be treated as a unit
+    let input = r#"func foo():
+	do_something()
+	# Line 1 of trailing comment
+	# Line 2 of trailing comment
+
+
+func bar():
+	pass
+"#;
+    assert_eq!(format(input), input);
+}
+
+#[test]
 fn test_boolean_operators() {
     assert!(format_ok("if x && y:\n\tpass\n"));
     assert!(format_ok("if x || y:\n\tpass\n"));

@@ -117,6 +117,12 @@ fn format_source_file(node: Node<'_>, ctx: &mut FormatContext<'_>) {
 /// - One blank line between different declaration sections (signal, enum, const, var)
 /// - class_name/extends are grouped together, then one blank line before declarations
 fn blank_lines_between(prev: &str, next: &str, is_top_level: bool) -> usize {
+    // Comments are handled separately by comment injection - don't add blank lines around them
+    // This is especially important for inline comments (on the same line as code)
+    if prev == "comment" || next == "comment" {
+        return 0;
+    }
+
     // Functions and classes get 2 blank lines at top level, 1 within classes
     let is_function_or_class = |kind: &str| {
         matches!(kind, "function_definition" | "class_definition")
