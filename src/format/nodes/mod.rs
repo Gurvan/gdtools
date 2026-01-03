@@ -58,26 +58,59 @@ pub fn format_node(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     }
 }
 
+/// Count blank lines between two source positions (1-indexed line numbers).
+/// Returns the number of consecutive empty lines immediately before next_start_line.
+///
+/// If there's a comment between statements, we count only the blank lines after
+/// the comment (immediately before the next statement), not the total blanks in the gap.
+/// This ensures blank lines used to separate a comment from preceding code don't
+/// also get counted toward separating from following code.
+fn count_source_blank_lines(ctx: &FormatContext<'_>, prev_end_line: usize, next_start_line: usize) -> usize {
+    if next_start_line <= prev_end_line + 1 {
+        return 0;
+    }
+
+    let mut blank_count = 0;
+    for line_num in (prev_end_line + 1)..next_start_line {
+        if let Some(line) = ctx.get_source_line(line_num) {
+            if line.trim().is_empty() {
+                blank_count += 1;
+            } else {
+                // Non-blank line (e.g., a comment) - reset count since we only
+                // want consecutive blank lines immediately before the next statement
+                blank_count = 0;
+            }
+        }
+    }
+    blank_count
+}
+
 /// Format the root source_file node.
 fn format_source_file(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     let mut cursor = node.walk();
     let children: Vec<_> = node.children(&mut cursor).collect();
 
+    let mut prev_end_line: Option<usize> = None;
     let mut prev_kind: Option<&str> = None;
 
     for child in children {
-        // Add blank lines between top-level definitions
-        if let Some(prev) = prev_kind {
-            let blank_lines = blank_lines_between(prev, child.kind(), true);
+        // Calculate blank lines to add
+        if let (Some(prev), Some(prev_end)) = (prev_kind, prev_end_line) {
+            let child_start_line = child.start_position().row + 1;
+            let source_blanks = count_source_blank_lines(ctx, prev_end, child_start_line);
+            let required_blanks = blank_lines_between(prev, child.kind(), true);
+            // Use the maximum of what was in source vs what's required
+            let blank_lines = source_blanks.max(required_blanks).min(2);
             ctx.output.push_blank_lines(blank_lines);
         }
 
         format_node(child, ctx);
         prev_kind = Some(child.kind());
+        prev_end_line = Some(child.end_position().row + 1);
     }
 }
 
-/// Determine how many blank lines should separate two nodes.
+/// Determine the minimum blank lines required between two nodes.
 fn blank_lines_between(prev: &str, next: &str, is_top_level: bool) -> usize {
     // Functions and classes get 2 blank lines at top level, 1 within classes
     let is_definition = |kind: &str| {
@@ -121,16 +154,22 @@ pub fn format_block(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     let mut cursor = node.walk();
     let children: Vec<_> = node.children(&mut cursor).collect();
 
+    let mut prev_end_line: Option<usize> = None;
     let mut prev_kind: Option<&str> = None;
 
     for child in children {
-        // Add blank lines within blocks (but only 1 max)
-        if let Some(prev) = prev_kind {
-            let blank_lines = blank_lines_between(prev, child.kind(), false);
+        // Add blank lines within blocks (max 1 blank line within blocks)
+        if let (Some(prev), Some(prev_end)) = (prev_kind, prev_end_line) {
+            let child_start_line = child.start_position().row + 1;
+            let source_blanks = count_source_blank_lines(ctx, prev_end, child_start_line);
+            let required_blanks = blank_lines_between(prev, child.kind(), false);
+            // Within blocks, allow max 1 blank line
+            let blank_lines = source_blanks.max(required_blanks).min(1);
             ctx.output.push_blank_lines(blank_lines);
         }
 
         format_node(child, ctx);
         prev_kind = Some(child.kind());
+        prev_end_line = Some(child.end_position().row + 1);
     }
 }

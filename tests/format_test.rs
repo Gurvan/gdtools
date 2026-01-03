@@ -380,3 +380,45 @@ fn test_idempotent_fixture() {
     let formatted_twice = format(&formatted_once);
     assert_eq!(formatted_once, formatted_twice, "Formatting is not idempotent");
 }
+
+// =============================================================================
+// Blank Line Preservation Tests (GDScript Style Guide Compliance)
+// =============================================================================
+// Per the official style guide:
+// - "Use one blank line inside functions to separate logical sections"
+// - 2 blank lines between function/class definitions at top level
+
+#[test]
+fn test_blank_lines_within_function_preserved() {
+    // Blank lines to separate logical sections should be kept
+    let input = "func foo():\n\tvar x = 1\n\tvar y = 2\n\n\tx = x + 1\n\ty = y + 1\n";
+    assert_eq!(format(input), input);
+}
+
+#[test]
+fn test_blank_lines_between_toplevel_vars_preserved() {
+    let input = "extends Node\n\nvar gltf := GLTFDocument.new()\nvar gltf_state := GLTFState.new()\n\nvar key_remap := {}\n";
+    assert_eq!(format(input), input);
+}
+
+#[test]
+fn test_multiple_blank_lines_collapsed_to_max() {
+    // More than 2 blank lines at top level should be collapsed to 2
+    let input = "extends Node\n\n\n\n\nvar x = 1\n";
+    let expected = "extends Node\n\n\nvar x = 1\n";
+    assert_eq!(format(input), expected);
+
+    // More than 1 blank line within function should be collapsed to 1
+    let input2 = "func foo():\n\tvar x = 1\n\n\n\n\tvar y = 2\n";
+    let expected2 = "func foo():\n\tvar x = 1\n\n\tvar y = 2\n";
+    assert_eq!(format(input2), expected2);
+}
+
+#[test]
+fn test_inline_comment_two_spaces() {
+    // Official guide says 2 spaces before inline comment
+    let input = "var x = 1  # comment\n";
+    assert_eq!(format(input), input);
+    // Single space should be corrected to two spaces
+    assert_eq!(format("var x = 1 # comment\n"), "var x = 1  # comment\n");
+}
