@@ -225,11 +225,20 @@ pub fn format_variable_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     let indent = ctx.indent_str();
 
     // Check for multiline statements (getter/setter, multiline arrays, etc.)
-    // Output these verbatim to preserve structure and comments
     let is_multiline = node.start_position().row != node.end_position().row;
 
-    if is_multiline {
-        // Multiline variable statement - output verbatim to preserve the block
+    // Check for getter/setter block by looking for the setget node in the AST
+    let has_setget = node
+        .children(&mut node.walk())
+        .any(|c| c.kind() == "setget");
+
+    // Check if the value contains comments (which aren't in AST)
+    let source = ctx.node_text(node);
+    let has_comments = source.contains('#');
+
+    // For getter/setter blocks OR multiline values with comments, preserve verbatim
+    // This ensures comments inside arrays/dicts are properly tracked for line mapping
+    if is_multiline && (has_setget || has_comments) {
         let start = node.start_position();
         let end = node.end_position();
         for line_idx in start.row..=end.row {
@@ -240,6 +249,7 @@ pub fn format_variable_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
         }
         return;
     }
+    // For multiline arrays/dicts without trailing comma, let expression formatter handle it
 
     // Check for annotations (export, onready)
     // The tree structure is: variable_statement -> annotations -> annotation
@@ -404,9 +414,14 @@ fn format_signal_parameters(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
 }
 
 /// Format enum definition.
+///
+/// Trailing comma determines format:
+/// - With trailing comma → multiline (one member per line)
+/// - Without trailing comma → single line
 pub fn format_enum_definition(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     let line = node.start_position().row + 1;
     let indent = ctx.indent_str();
+    let source = ctx.node_text(node);
 
     // Get enum name (optional for anonymous enums)
     let name = node
@@ -418,31 +433,60 @@ pub fn format_enum_definition(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     let body = node.child_by_field_name("body");
 
     if let Some(body_node) = body {
-        let members = format_enum_members(body_node, ctx);
+        let members = collect_enum_members(body_node, ctx);
         if members.is_empty() {
             ctx.output.push_mapped(format!("{}enum{} {{}}", indent, name), line);
         } else {
-            ctx.output
-                .push_mapped(format!("{}enum{} {{ {} }}", indent, name, members), line);
+            // Check if source has trailing comma (before the closing brace)
+            let has_trailing_comma = has_trailing_comma_before(source, '}');
+
+            if has_trailing_comma {
+                // Multiline format
+                let single_indent = ctx.options.indent_style.as_str();
+                let inner_indent = format!("{}{}", indent, single_indent);
+                ctx.output.push_mapped(format!("{}enum{} {{", indent, name), line);
+                for member in &members {
+                    // Each member on its own line
+                    ctx.output.push_line(format!("{}{},", inner_indent, member));
+                }
+                ctx.output.push_line(format!("{}}}", indent));
+            } else {
+                // Single-line format
+                ctx.output.push_mapped(
+                    format!("{}enum{} {{ {} }}", indent, name, members.join(", ")),
+                    line,
+                );
+            }
         }
     } else {
         ctx.output.push_mapped(format!("{}enum{} {{}}", indent, name), line);
     }
 }
 
-/// Format enum members.
-fn format_enum_members(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
+/// Check if source has a trailing comma before the specified closing bracket.
+fn has_trailing_comma_before(source: &str, close_bracket: char) -> bool {
+    let trimmed = source.trim();
+    if !trimmed.ends_with(close_bracket) {
+        return false;
+    }
+
+    // Get content before closing bracket
+    let before_close = &trimmed[..trimmed.len() - 1].trim_end();
+    before_close.ends_with(',')
+}
+
+/// Collect enum member strings.
+fn collect_enum_members(node: Node<'_>, ctx: &FormatContext<'_>) -> Vec<String> {
     let mut cursor = node.walk();
     let members: Vec<_> = node
         .children(&mut cursor)
         .filter(|c| c.kind() == "enum_entry" || c.kind() == "enumerator")
         .collect();
 
-    let formatted: Vec<String> = members
+    members
         .iter()
         .map(|m| format_enum_member(*m, ctx))
-        .collect();
-    formatted.join(", ")
+        .collect()
 }
 
 /// Format a single enum member.

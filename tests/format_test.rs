@@ -64,6 +64,35 @@ fn test_variable_statement() {
 }
 
 #[test]
+fn test_getter_setter_preserved() {
+    let input = r#"var health: int:
+	get:
+		return _health
+	set(value):
+		_health = value
+"#;
+    assert_eq!(format(input), input);
+}
+
+#[test]
+fn test_getter_only_preserved() {
+    let input = r#"var health: int:
+	get:
+		return _health
+"#;
+    assert_eq!(format(input), input);
+}
+
+#[test]
+fn test_setter_only_preserved() {
+    let input = r#"var health: int:
+	set(value):
+		_health = value
+"#;
+    assert_eq!(format(input), input);
+}
+
+#[test]
 fn test_inferred_type_variable() {
     // := is inferred type assignment
     assert_eq!(format("var x := 1\n"), "var x := 1\n");
@@ -82,6 +111,28 @@ fn test_multiline_variable_with_comments() {
 "#;
     assert_eq!(format(input), input);
     assert_ast_equivalent(input);
+}
+
+#[test]
+fn test_array_comments_dont_leak_to_next_function() {
+    // Comments inside an array should not appear before the next function
+    let input = r#"var NAMES = [
+	"A",
+	# "B",
+	# "C",
+	"D",
+]
+
+
+func foo():
+	pass
+"#;
+    let formatted = format(input);
+    // Comments should stay inside the array, not leak to before func
+    assert!(!formatted.contains("# \"B\",\n# \"C\",\nfunc"),
+        "Comments leaked outside array:\n{}", formatted);
+    assert!(formatted.contains("var NAMES = ["), "Array declaration missing");
+    assert!(formatted.contains("func foo():"), "Function missing");
 }
 
 #[test]
@@ -699,4 +750,263 @@ fn test_fullfile_fixture_idempotent() {
     let formatted_once = format(source);
     let formatted_twice = format(&formatted_once);
     assert_eq!(formatted_once, formatted_twice, "Formatting fullfile.gd is not idempotent");
+}
+
+#[test]
+fn test_array_with_comments_followed_by_function() {
+    // Regression test: comments inside arrays were leaking to appear before next function
+    let input = r#"var TRIGGER_NAMES = [
+	"Create Hitbox",
+	"Ground Jump",
+	# "Spawn Projectile",
+	# "Spawn Accessory",
+	"Special Action",
+]
+
+
+func _new_trigger_by_name(name_: String) -> Serializable:
+	match name_:
+		"Create Hitbox":
+			return TriggerCreateHitbox.new()
+"#;
+    let formatted = format(input);
+
+    // The comments should NOT appear right before the func declaration
+    // They should stay inside the array
+    let func_pos = formatted.find("func _new_trigger_by_name").expect("func not found");
+    let before_func = &formatted[..func_pos];
+
+    // The text right before func should be blank lines, not comments
+    let lines_before: Vec<&str> = before_func.lines().collect();
+    let last_non_empty = lines_before.iter().rev()
+        .find(|l| !l.trim().is_empty());
+
+    assert!(
+        last_non_empty.map_or(true, |l| l.trim() == "]"),
+        "Expected ']' before blank lines before func, got: {:?}\nFull output:\n{}",
+        last_non_empty, formatted
+    );
+}
+
+// =============================================================================
+// Trailing Comma Tests (GDScript Style Guide)
+// =============================================================================
+// Trailing comma determines format style:
+// - WITH trailing comma → multiline (one element per line)
+// - WITHOUT trailing comma → single line
+
+#[test]
+fn test_trailing_comma_makes_array_multiline() {
+    // Trailing comma signals "keep this multiline"
+    let input = "var arr = [1, 2, 3,]\n";
+    let expected = r#"var arr = [
+	1,
+	2,
+	3,
+]
+"#;
+    assert_eq!(format(input), expected);
+    assert_ast_equivalent(input);
+}
+
+#[test]
+fn test_no_trailing_comma_makes_array_single_line() {
+    // No trailing comma signals "make this single line"
+    let input = r#"var arr = [
+	1,
+	2,
+	3
+]
+"#;
+    let expected = "var arr = [1, 2, 3]\n";
+    assert_eq!(format(input), expected);
+    assert_ast_equivalent(input);
+}
+
+#[test]
+fn test_multiline_array_with_trailing_comma_preserved() {
+    // Already multiline with trailing comma - stays multiline
+    let input = r#"var arr = [
+	1,
+	2,
+	3,
+]
+"#;
+    assert_eq!(format(input), input);
+}
+
+#[test]
+fn test_single_line_array_without_trailing_comma() {
+    // Single-line without trailing comma stays single line
+    assert_eq!(format("var arr = [1, 2, 3]\n"), "var arr = [1, 2, 3]\n");
+}
+
+#[test]
+fn test_trailing_comma_makes_dict_multiline() {
+    // Trailing comma signals "keep this multiline"
+    let input = "var d = { a: 1, b: 2, }\n";
+    let expected = r#"var d = {
+	a: 1,
+	b: 2,
+}
+"#;
+    assert_eq!(format(input), expected);
+    assert_ast_equivalent(input);
+}
+
+#[test]
+fn test_no_trailing_comma_makes_dict_single_line() {
+    // No trailing comma signals "make this single line"
+    let input = r#"var d = {
+	a: 1,
+	b: 2
+}
+"#;
+    let expected = "var d = { a: 1, b: 2 }\n";
+    assert_eq!(format(input), expected);
+    assert_ast_equivalent(input);
+}
+
+#[test]
+fn test_multiline_dict_with_trailing_comma_preserved() {
+    let input = r#"var d = {
+	a: 1,
+	b: 2,
+}
+"#;
+    assert_eq!(format(input), input);
+}
+
+#[test]
+fn test_single_line_dict_without_trailing_comma() {
+    assert_eq!(format("var d = { a: 1, b: 2 }\n"), "var d = { a: 1, b: 2 }\n");
+}
+
+// =============================================================================
+// Multiline Enum Tests (GDScript Style Guide)
+// =============================================================================
+// Trailing comma determines format style for enums too
+
+#[test]
+fn test_trailing_comma_makes_enum_multiline() {
+    // Trailing comma signals "keep this multiline"
+    let input = "enum State { IDLE, WALKING, RUNNING, }\n";
+    let expected = r#"enum State {
+	IDLE,
+	WALKING,
+	RUNNING,
+}
+"#;
+    assert_eq!(format(input), expected);
+    assert_ast_equivalent(input);
+}
+
+#[test]
+fn test_no_trailing_comma_makes_enum_single_line() {
+    // No trailing comma signals "make this single line"
+    let input = r#"enum State {
+	IDLE,
+	WALKING,
+	RUNNING
+}
+"#;
+    let expected = "enum State { IDLE, WALKING, RUNNING }\n";
+    assert_eq!(format(input), expected);
+    assert_ast_equivalent(input);
+}
+
+#[test]
+fn test_multiline_enum_with_trailing_comma_preserved() {
+    let input = r#"enum State {
+	IDLE,
+	WALKING,
+	RUNNING,
+}
+"#;
+    assert_eq!(format(input), input);
+}
+
+#[test]
+fn test_single_line_enum_without_trailing_comma() {
+    let input = "enum State { IDLE, WALKING, RUNNING }\n";
+    assert_eq!(format(input), input);
+}
+
+// --- Function Call Trailing Comma Tests ---
+
+#[test]
+fn test_trailing_comma_makes_call_multiline() {
+    // Trailing comma signals "keep this multiline"
+    let input = "func _ready():\n\tcall(a, b, c,)\n";
+    let expected = r#"func _ready():
+	call(
+		a,
+		b,
+		c,
+	)
+"#;
+    assert_eq!(format(input), expected);
+    assert_ast_equivalent(input);
+}
+
+#[test]
+fn test_no_trailing_comma_makes_call_single_line() {
+    // No trailing comma signals "make this single line"
+    let input = r#"func _ready():
+	call(
+		a,
+		b,
+		c
+	)
+"#;
+    let expected = "func _ready():\n\tcall(a, b, c)\n";
+    assert_eq!(format(input), expected);
+    assert_ast_equivalent(input);
+}
+
+#[test]
+fn test_multiline_call_with_trailing_comma_preserved() {
+    let input = r#"func _ready():
+	call(
+		a,
+		b,
+		c,
+	)
+"#;
+    assert_eq!(format(input), input);
+}
+
+#[test]
+fn test_single_line_call_without_trailing_comma() {
+    let input = "func _ready():\n\tcall(a, b, c)\n";
+    assert_eq!(format(input), input);
+}
+
+// =============================================================================
+// Continuation Indentation Tests (GDScript Style Guide)
+// =============================================================================
+// Style guide: "Use 1 indent level for continuation lines in arrays, dictionaries, and enums"
+// The formatter normalizes multiline arrays/dicts/enums to use 1 indent level.
+
+#[test]
+fn test_continuation_indent_array() {
+    // Array continuation uses 1 indent level
+    let input = r#"var arr = [
+	item1,
+	item2,
+	item3,
+]
+"#;
+    assert_eq!(format(input), input);
+}
+
+#[test]
+fn test_continuation_indent_dict() {
+    // Dict continuation uses 1 indent level
+    let input = r#"var dict = {
+	"key1": value1,
+	"key2": value2,
+}
+"#;
+    assert_eq!(format(input), input);
 }

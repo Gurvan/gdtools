@@ -183,14 +183,32 @@ fn format_boolean_operation(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
 
 /// Format function/method call: `func(a, b)` or `obj.method(a, b)`
 fn format_call(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
+    let source = ctx.node_text(node);
+
+    // If call contains comments, preserve verbatim (comments aren't in AST)
+    if source.contains('#') {
+        return source.to_string();
+    }
+
+    // Check for trailing comma to determine multiline vs single-line
+    let has_trailing_comma = has_trailing_comma_before(source, ')');
+
     // Try field names first
     let function = node.child_by_field_name("function");
     let arguments = node.child_by_field_name("arguments");
 
     if let (Some(func), Some(args)) = (function, arguments) {
         let func_text = format_expression(func, ctx);
-        let args_text = format_arguments(args, ctx);
-        return format!("{}({})", func_text, args_text);
+        let args_list = collect_arguments(args, ctx);
+
+        if args_list.is_empty() {
+            return format!("{}()", func_text);
+        }
+
+        if has_trailing_comma {
+            return format_call_multiline(&func_text, &args_list, ctx);
+        }
+        return format!("{}({})", func_text, args_list.join(", "));
     }
 
     if let Some(func) = function {
@@ -213,36 +231,54 @@ fn format_call(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
     if let Some(func) = func_node {
         let func_text = format_expression(*func, ctx);
         if let Some(args) = args_node {
-            let args_text = format_arguments(*args, ctx);
-            return format!("{}({})", func_text, args_text);
+            let args_list = collect_arguments(*args, ctx);
+            if args_list.is_empty() {
+                return format!("{}()", func_text);
+            }
+            if has_trailing_comma {
+                return format_call_multiline(&func_text, &args_list, ctx);
+            }
+            return format!("{}({})", func_text, args_list.join(", "));
         }
         // Collect arguments directly from children
-        let args: Vec<_> = children
+        let args_list: Vec<_> = children
             .iter()
             .filter(|c| !matches!(c.kind(), "(" | ")" | "," | "identifier" | "attribute"))
             .filter(|c| c.start_byte() != func.start_byte())
             .map(|c| format_expression(*c, ctx))
             .collect();
-        if args.is_empty() {
+        if args_list.is_empty() {
             return format!("{}()", func_text);
         }
-        return format!("{}({})", func_text, args.join(", "));
+        if has_trailing_comma {
+            return format_call_multiline(&func_text, &args_list, ctx);
+        }
+        return format!("{}({})", func_text, args_list.join(", "));
     }
 
     // Fallback
     ctx.node_text(node).to_string()
 }
 
-/// Format argument list.
-fn format_arguments(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
-    let mut cursor = node.walk();
-    let children: Vec<_> = node
-        .children(&mut cursor)
-        .filter(|c| c.kind() != "(" && c.kind() != ")" && c.kind() != ",")
-        .collect();
+/// Format a function call with multiline arguments (one per line with trailing comma)
+fn format_call_multiline(func: &str, args: &[String], ctx: &FormatContext<'_>) -> String {
+    let indent = ctx.indent_str();
+    let inner_indent = format!("{}\t", indent);
+    let mut result = format!("{}(\n", func);
+    for arg in args {
+        result.push_str(&format!("{}{},\n", inner_indent, arg));
+    }
+    result.push_str(&format!("{})", indent));
+    result
+}
 
-    let args: Vec<String> = children.iter().map(|c| format_expression(*c, ctx)).collect();
-    args.join(", ")
+/// Collect arguments from an argument list node
+fn collect_arguments(node: Node<'_>, ctx: &FormatContext<'_>) -> Vec<String> {
+    let mut cursor = node.walk();
+    node.children(&mut cursor)
+        .filter(|c| c.kind() != "(" && c.kind() != ")" && c.kind() != ",")
+        .map(|c| format_expression(c, ctx))
+        .collect()
 }
 
 /// Format attribute access: `obj.attr`
@@ -277,8 +313,19 @@ fn format_subscript(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
 
 /// Format array literal: `[1, 2, 3]`
 ///
-/// Preserves multiline arrays to maintain readability and inline comments.
+/// Trailing comma determines format:
+/// - With trailing comma → multiline (one element per line)
+/// - Without trailing comma → single line
+///
+/// Arrays containing comments are preserved verbatim since comments aren't in the AST.
 fn format_array(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
+    let source = ctx.node_text(node);
+
+    // If array contains comments, preserve verbatim (comments aren't in AST)
+    if source.contains('#') {
+        return source.to_string();
+    }
+
     let mut cursor = node.walk();
     let children: Vec<_> = node
         .children(&mut cursor)
@@ -289,24 +336,56 @@ fn format_array(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
         return "[]".to_string();
     }
 
-    // Check if the source array was multiline
-    let is_multiline = node.start_position().row != node.end_position().row;
+    // Check if source has trailing comma (before the closing bracket)
+    let has_trailing_comma = has_trailing_comma_before(source, ']');
 
-    if is_multiline {
-        // Preserve multiline arrays verbatim to keep structure and comments
-        return ctx.node_text(node).to_string();
+    if has_trailing_comma {
+        // Multiline format with trailing comma preserved
+        let indent = ctx.indent_str();
+        let single_indent = ctx.options.indent_style.as_str();
+        let inner_indent = format!("{}{}", indent, single_indent);
+
+        let elements: Vec<String> = children.iter().map(|c| format_expression(*c, ctx)).collect();
+        format!(
+            "[\n{}{},\n{}]",
+            inner_indent,
+            elements.join(&format!(",\n{}", inner_indent)),
+            indent
+        )
+    } else {
+        // Single-line format without trailing comma
+        let elements: Vec<String> = children.iter().map(|c| format_expression(*c, ctx)).collect();
+        format!("[{}]", elements.join(", "))
+    }
+}
+
+/// Check if source has a trailing comma before the specified closing bracket.
+fn has_trailing_comma_before(source: &str, close_bracket: char) -> bool {
+    let trimmed = source.trim();
+    if !trimmed.ends_with(close_bracket) {
+        return false;
     }
 
-    let elements: Vec<String> = children.iter().map(|c| format_expression(*c, ctx)).collect();
-    format!("[{}]", elements.join(", "))
+    // Get content before closing bracket
+    let before_close = &trimmed[..trimmed.len() - 1].trim_end();
+    before_close.ends_with(',')
 }
 
 /// Format dictionary literal: `{ a: 1, b: 2 }`
 ///
-/// Per the GDScript style guide:
-/// - Single-line dictionaries should have space after `{` and before `}`
-/// - Multi-line dictionaries have each entry on its own line with trailing comma
+/// Trailing comma determines format:
+/// - With trailing comma → multiline (one entry per line)
+/// - Without trailing comma → single line with spaces inside braces
+///
+/// Dicts containing comments are preserved verbatim since comments aren't in the AST.
 fn format_dictionary(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
+    let source = ctx.node_text(node);
+
+    // If dict contains comments, preserve verbatim (comments aren't in AST)
+    if source.contains('#') {
+        return source.to_string();
+    }
+
     let mut cursor = node.walk();
     // Dictionary entries can be "pair" nodes - collect all non-punctuation children
     let children: Vec<_> = node
@@ -318,11 +397,11 @@ fn format_dictionary(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
         return "{}".to_string();
     }
 
-    // Check if the source dictionary was multiline (spans multiple lines)
-    let is_multiline = node.start_position().row != node.end_position().row;
+    // Check if source has trailing comma (before the closing brace)
+    let has_trailing_comma = has_trailing_comma_before(source, '}');
 
-    if is_multiline {
-        // Format as multiline dictionary with each entry on its own line
+    if has_trailing_comma {
+        // Multiline format with trailing comma
         let indent = ctx.indent_str();
         let single_indent = ctx.options.indent_style.as_str();
         let inner_indent = format!("{}{}", indent, single_indent);
