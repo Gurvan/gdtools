@@ -6,9 +6,9 @@ use clap::Parser;
 use ignore::WalkBuilder;
 use miette::{miette, IntoDiagnostic, Result};
 
-use gdlint::config::load_config;
-use gdlint::format::{compare_ast_with_source, run_formatter, AstCheckResult, FormatOptions, IndentStyle};
-use gdlint::parser;
+use gdtools::config::load_config;
+use gdtools::format::{compare_ast_with_source, run_formatter, AstCheckResult, FormatOptions, IndentStyle};
+use gdtools::parser;
 
 #[derive(Parser)]
 #[command(name = "gdformat", version, about = "A fast GDScript formatter for Godot 4.x")]

@@ -1,10 +1,9 @@
 [package]
-name = "gdlint"
+name = "gdtools"
 version = "0.1.0"
 edition = "2021"
-description = "A fast GDScript linter for Godot 4.x"
+description = "Fast GDScript tools for Godot 4.x"
 license = "MIT"
-default-run = "gdlint"
 
 [[bin]]
 name = "gdlint"

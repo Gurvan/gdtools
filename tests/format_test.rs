@@ -1,4 +1,4 @@
-use gdlint::format::{compare_ast_with_source, run_formatter, AstCheckResult, FormatOptions};
+use gdtools::format::{compare_ast_with_source, run_formatter, AstCheckResult, FormatOptions};
 use tree_sitter::Parser;
 
 fn format(source: &str) -> String {

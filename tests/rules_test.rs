@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
-use gdlint::config::Config;
-use gdlint::lint::run_linter;
-use gdlint::rules::all_rules;
+use gdtools::config::Config;
+use gdtools::lint::run_linter;
+use gdtools::rules::all_rules;
 
 fn lint_code(source: &str) -> Vec<(String, String)> {
     let config = Config::default();

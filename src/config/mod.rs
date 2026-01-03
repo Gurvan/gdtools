@@ -22,7 +22,7 @@ fn find_config_file() -> Option<std::path::PathBuf> {
     let mut current = std::env::current_dir().ok()?;
 
     loop {
-        let config_path = current.join("gdlint.toml");
+        let config_path = current.join("gdtools.toml");
         if config_path.exists() {
             return Some(config_path);
         }

@@ -5,9 +5,9 @@ use clap::{Parser, Subcommand};
 use ignore::WalkBuilder;
 use miette::{miette, IntoDiagnostic, Result};
 
-use gdlint::config::{load_config, Config};
-use gdlint::lint::{run_linter, Diagnostic, Rule, Severity};
-use gdlint::rules::all_rules;
+use gdtools::config::{load_config, Config};
+use gdtools::lint::{run_linter, Diagnostic, Rule, Severity};
+use gdtools::rules::all_rules;
 
 #[derive(Parser)]
 #[command(name = "gdlint", version, about = "A fast GDScript linter for Godot 4.x")]
