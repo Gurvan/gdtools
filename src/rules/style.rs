@@ -21,21 +21,37 @@ enum MemberKind {
     InnerClass,
 }
 
+/// Extract the annotation name from an annotation node.
+/// Annotation nodes have an identifier child containing the name (e.g., "tool", "export").
+fn get_annotation_name<'a>(node: Node<'a>, source: &'a [u8]) -> Option<&'a str> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "identifier" {
+            return child.utf8_text(source).ok();
+        }
+    }
+    None
+}
+
 impl MemberKind {
     fn from_node(node: Node<'_>, source: &[u8]) -> Option<Self> {
         let node_text = |n: Node<'_>| n.utf8_text(source).unwrap_or("");
 
         match node.kind() {
             "annotation" => {
-                let text = node_text(node);
-                if text.starts_with("@tool") {
-                    Some(MemberKind::Tool)
-                } else if text.starts_with("@export") {
-                    Some(MemberKind::ExportVar)
-                } else if text.starts_with("@onready") {
-                    Some(MemberKind::OnreadyVar)
-                } else {
-                    None
+                match get_annotation_name(node, source) {
+                    Some("tool") => Some(MemberKind::Tool),
+                    Some("export" | "export_category" | "export_group" | "export_subgroup"
+                         | "export_color_no_alpha" | "export_dir" | "export_enum"
+                         | "export_exp_easing" | "export_file" | "export_flags"
+                         | "export_flags_2d_navigation" | "export_flags_2d_physics"
+                         | "export_flags_2d_render" | "export_flags_3d_navigation"
+                         | "export_flags_3d_physics" | "export_flags_3d_render"
+                         | "export_global_dir" | "export_global_file" | "export_multiline"
+                         | "export_node_path" | "export_placeholder" | "export_range"
+                         | "export_storage" | "export_custom") => Some(MemberKind::ExportVar),
+                    Some("onready") => Some(MemberKind::OnreadyVar),
+                    _ => None,
                 }
             }
             "class_name_statement" => Some(MemberKind::ClassName),
@@ -47,15 +63,21 @@ impl MemberKind {
                 if let Some(parent) = node.parent() {
                     if let Some(prev) = find_previous_sibling(parent, node) {
                         if prev.kind() == "annotation" {
-                            let text = node_text(prev);
-                            if text.starts_with("@export") {
-                                return Some(MemberKind::ExportVar);
-                            }
-                            if text.starts_with("@onready") {
-                                return Some(MemberKind::OnreadyVar);
-                            }
-                            if text.starts_with("@static") {
-                                return Some(MemberKind::StaticVar);
+                            match get_annotation_name(prev, source) {
+                                Some("export" | "export_category" | "export_group" | "export_subgroup"
+                                     | "export_color_no_alpha" | "export_dir" | "export_enum"
+                                     | "export_exp_easing" | "export_file" | "export_flags"
+                                     | "export_flags_2d_navigation" | "export_flags_2d_physics"
+                                     | "export_flags_2d_render" | "export_flags_3d_navigation"
+                                     | "export_flags_3d_physics" | "export_flags_3d_render"
+                                     | "export_global_dir" | "export_global_file" | "export_multiline"
+                                     | "export_node_path" | "export_placeholder" | "export_range"
+                                     | "export_storage" | "export_custom") => {
+                                    return Some(MemberKind::ExportVar);
+                                }
+                                Some("onready") => return Some(MemberKind::OnreadyVar),
+                                Some("static") => return Some(MemberKind::StaticVar),
+                                _ => {}
                             }
                         }
                     }

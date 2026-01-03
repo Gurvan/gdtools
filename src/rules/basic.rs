@@ -192,6 +192,28 @@ impl Default for ComparisonWithItselfRule {
     }
 }
 
+/// Check if a binary_operator or comparison_operator node is a comparison.
+/// Uses the AST operator field instead of text matching.
+fn is_comparison_operator(node: Node<'_>, ctx: &LintContext<'_>) -> bool {
+    // comparison_operator nodes are always comparisons
+    if node.kind() == "comparison_operator" {
+        return true;
+    }
+
+    // For binary_operator, check the operator child
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        // The operator is typically an unnamed node between operands
+        if !child.is_named() {
+            let op = ctx.node_text(child);
+            if matches!(op, "==" | "!=" | "<" | "<=" | ">" | ">=") {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 impl Rule for ComparisonWithItselfRule {
     fn meta(&self) -> &RuleMetadata {
         &self.meta
@@ -202,16 +224,8 @@ impl Rule for ComparisonWithItselfRule {
     }
 
     fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
-        // Check if this is a comparison operation
-        let node_text = ctx.node_text(node);
-        let is_comparison = node_text.contains("==")
-            || node_text.contains("!=")
-            || node_text.contains("<=")
-            || node_text.contains(">=")
-            || (node_text.contains('<') && !node_text.contains("<<"))
-            || (node_text.contains('>') && !node_text.contains(">>"));
-
-        if !is_comparison {
+        // Check if this is a comparison operation using AST inspection
+        if !is_comparison_operator(node, ctx) {
             return;
         }
 

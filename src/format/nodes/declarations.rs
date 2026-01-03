@@ -1,6 +1,6 @@
 use tree_sitter::Node;
 
-use super::expressions::format_expression;
+use super::expressions::{format_expression, has_trailing_comma};
 use super::{format_block, format_node};
 use crate::format::context::FormatContext;
 
@@ -272,9 +272,12 @@ pub fn format_variable_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
         String::new()
     };
 
-    // Check if this is an inferred type assignment (:=)
-    let source_text = ctx.node_text(node);
-    let is_inferred = source_text.contains(":=");
+    // Check if this is an inferred type assignment (:=) using AST
+    // The type field can be either "inferred_type" or "type" node
+    let is_inferred = node
+        .child_by_field_name("type")
+        .map(|t| t.kind() == "inferred_type")
+        .unwrap_or(false);
 
     // Get variable name
     let name = node
@@ -334,9 +337,12 @@ pub fn format_const_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     let line = node.start_position().row + 1;
     let indent = ctx.indent_str();
 
-    // Check if this is an inferred type constant (:=)
-    let source_text = ctx.node_text(node);
-    let is_inferred = source_text.contains(":=");
+    // Check if this is an inferred type constant (:=) using AST
+    // The type field can be either "inferred_type" or "type" node
+    let is_inferred = node
+        .child_by_field_name("type")
+        .map(|t| t.kind() == "inferred_type")
+        .unwrap_or(false);
 
     // Get constant name
     let name = node
@@ -421,7 +427,6 @@ fn format_signal_parameters(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
 pub fn format_enum_definition(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     let line = node.start_position().row + 1;
     let indent = ctx.indent_str();
-    let source = ctx.node_text(node);
 
     // Get enum name (optional for anonymous enums)
     let name = node
@@ -437,10 +442,10 @@ pub fn format_enum_definition(node: Node<'_>, ctx: &mut FormatContext<'_>) {
         if members.is_empty() {
             ctx.output.push_mapped(format!("{}enum{} {{}}", indent, name), line);
         } else {
-            // Check if source has trailing comma (before the closing brace)
-            let has_trailing_comma = has_trailing_comma_before(source, '}');
+            // Check if enum body has trailing comma using AST inspection
+            let trailing_comma = has_trailing_comma(body_node);
 
-            if has_trailing_comma {
+            if trailing_comma {
                 // Multiline format
                 let single_indent = ctx.options.indent_style.as_str();
                 let inner_indent = format!("{}{}", indent, single_indent);
@@ -461,18 +466,6 @@ pub fn format_enum_definition(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     } else {
         ctx.output.push_mapped(format!("{}enum{} {{}}", indent, name), line);
     }
-}
-
-/// Check if source has a trailing comma before the specified closing bracket.
-fn has_trailing_comma_before(source: &str, close_bracket: char) -> bool {
-    let trimmed = source.trim();
-    if !trimmed.ends_with(close_bracket) {
-        return false;
-    }
-
-    // Get content before closing bracket
-    let before_close = &trimmed[..trimmed.len() - 1].trim_end();
-    before_close.ends_with(',')
 }
 
 /// Collect enum member strings.

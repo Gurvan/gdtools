@@ -451,8 +451,8 @@ impl Rule for LoadConstantNameRule {
     }
 
     fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
-        let node_text = ctx.node_text(node);
-        if !node_text.contains("load(") && !node_text.contains("preload(") {
+        // Check if this constant has a load/preload call using AST inspection
+        if !contains_load_call(node, ctx) {
             return;
         }
 
@@ -505,10 +505,57 @@ fn is_class_scope_variable(node: Node<'_>) -> bool {
     true // Default to class scope if we can't determine
 }
 
-/// Helper to check if a variable has a load/preload call
+/// Helper to check if a node contains a load/preload call by inspecting the AST.
+/// Recursively searches for call nodes with function name "load" or "preload".
 fn has_load_or_preload(node: Node<'_>, ctx: &LintContext<'_>) -> bool {
-    let text = ctx.node_text(node);
-    text.contains("load(") || text.contains("preload(")
+    contains_load_call(node, ctx)
+}
+
+/// Recursively check if a node or its descendants contain a load/preload call.
+fn contains_load_call(node: Node<'_>, ctx: &LintContext<'_>) -> bool {
+    if node.kind() == "call" {
+        // Check if the function being called is "load" or "preload"
+        // The function is typically the first child (an identifier)
+        if let Some(func) = node.child(0) {
+            if func.kind() == "identifier" {
+                let func_name = ctx.node_text(func);
+                if func_name == "load" || func_name == "preload" {
+                    return true;
+                }
+            }
+        }
+    }
+
+    // Recursively check children
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if contains_load_call(child, ctx) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Recursively check if a node or its descendants contain a preload call specifically.
+fn contains_preload_call(node: Node<'_>, ctx: &LintContext<'_>) -> bool {
+    if node.kind() == "call" {
+        if let Some(func) = node.child(0) {
+            if func.kind() == "identifier" {
+                let func_name = ctx.node_text(func);
+                if func_name == "preload" {
+                    return true;
+                }
+            }
+        }
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if contains_preload_call(child, ctx) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Macro to generate variable naming rules with scope filtering.
@@ -621,8 +668,7 @@ variable_naming_rule!(
         if is_class_scope_variable(node) {
             return false;
         }
-        let text = ctx.node_text(node);
-        text.contains("preload(")
+        contains_preload_call(node, ctx)
     },
     "Function preload variable should be PascalCase:"
 );

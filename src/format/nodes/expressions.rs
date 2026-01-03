@@ -190,8 +190,11 @@ fn format_call(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
         return source.to_string();
     }
 
-    // Check for trailing comma to determine multiline vs single-line
-    let has_trailing_comma = has_trailing_comma_before(source, ')');
+    // Check for trailing comma using AST inspection on the arguments node
+    let trailing_comma = node
+        .child_by_field_name("arguments")
+        .map(|args| has_trailing_comma(args))
+        .unwrap_or(false);
 
     // Try field names first
     let function = node.child_by_field_name("function");
@@ -205,7 +208,7 @@ fn format_call(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
             return format!("{}()", func_text);
         }
 
-        if has_trailing_comma {
+        if trailing_comma {
             return format_call_multiline(&func_text, &args_list, ctx);
         }
         return format!("{}({})", func_text, args_list.join(", "));
@@ -235,7 +238,7 @@ fn format_call(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
             if args_list.is_empty() {
                 return format!("{}()", func_text);
             }
-            if has_trailing_comma {
+            if trailing_comma {
                 return format_call_multiline(&func_text, &args_list, ctx);
             }
             return format!("{}({})", func_text, args_list.join(", "));
@@ -250,7 +253,7 @@ fn format_call(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
         if args_list.is_empty() {
             return format!("{}()", func_text);
         }
-        if has_trailing_comma {
+        if trailing_comma {
             return format_call_multiline(&func_text, &args_list, ctx);
         }
         return format!("{}({})", func_text, args_list.join(", "));
@@ -336,10 +339,10 @@ fn format_array(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
         return "[]".to_string();
     }
 
-    // Check if source has trailing comma (before the closing bracket)
-    let has_trailing_comma = has_trailing_comma_before(source, ']');
+    // Check if array has trailing comma using AST inspection
+    let trailing_comma = has_trailing_comma(node);
 
-    if has_trailing_comma {
+    if trailing_comma {
         // Multiline format with trailing comma preserved
         let indent = ctx.indent_str();
         let single_indent = ctx.options.indent_style.as_str();
@@ -359,16 +362,27 @@ fn format_array(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
     }
 }
 
-/// Check if source has a trailing comma before the specified closing bracket.
-fn has_trailing_comma_before(source: &str, close_bracket: char) -> bool {
-    let trimmed = source.trim();
-    if !trimmed.ends_with(close_bracket) {
-        return false;
+/// Check if a container node (array, dictionary, arguments, enum body) has a trailing comma.
+/// Uses AST inspection: checks if the last child before the closing bracket is a comma.
+pub fn has_trailing_comma(node: Node<'_>) -> bool {
+    let mut cursor = node.walk();
+    let children: Vec<_> = node.children(&mut cursor).collect();
+
+    // Find the closing bracket
+    let close_brackets = ["]", "}", ")"];
+    let last_idx = children
+        .iter()
+        .rposition(|c| close_brackets.contains(&c.kind()));
+
+    if let Some(close_idx) = last_idx {
+        // Check if the child immediately before the closing bracket is a comma
+        if close_idx > 0 {
+            let prev_child = children[close_idx - 1];
+            return prev_child.kind() == ",";
+        }
     }
 
-    // Get content before closing bracket
-    let before_close = &trimmed[..trimmed.len() - 1].trim_end();
-    before_close.ends_with(',')
+    false
 }
 
 /// Format dictionary literal: `{ a: 1, b: 2 }`
@@ -397,10 +411,10 @@ fn format_dictionary(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
         return "{}".to_string();
     }
 
-    // Check if source has trailing comma (before the closing brace)
-    let has_trailing_comma = has_trailing_comma_before(source, '}');
+    // Check if dict has trailing comma using AST inspection
+    let trailing_comma = has_trailing_comma(node);
 
-    if has_trailing_comma {
+    if trailing_comma {
         // Multiline format with trailing comma
         let indent = ctx.indent_str();
         let single_indent = ctx.options.indent_style.as_str();
