@@ -19,6 +19,124 @@ static LOAD_CONSTANT: Lazy<Regex> =
 static PASCAL_OR_SNAKE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^(_?[A-Z][A-Za-z0-9]*|_?[a-z][a-z0-9_]*)$").unwrap());
 
+/// Helper to configure a pattern from rule config.
+fn configure_pattern(pattern: &mut Regex, config: &RuleConfig) -> Result<(), String> {
+    if let Some(p) = config.options.get("pattern").and_then(|v| v.as_str()) {
+        *pattern = Regex::new(p).map_err(|e| format!("Invalid pattern: {}", e))?;
+    }
+    Ok(())
+}
+
+/// Macro to generate simple naming rules that check a "name" field against a pattern.
+macro_rules! simple_naming_rule {
+    (
+        $struct_name:ident,
+        $id:literal,
+        $name:literal,
+        $description:literal,
+        $default_pattern:expr,
+        $node_kinds:expr,
+        $message:literal
+    ) => {
+        #[derive(Debug)]
+        pub struct $struct_name {
+            meta: RuleMetadata,
+            pattern: Regex,
+        }
+
+        impl Default for $struct_name {
+            fn default() -> Self {
+                Self {
+                    meta: RuleMetadata {
+                        id: $id,
+                        name: $name,
+                        category: RuleCategory::Naming,
+                        default_severity: Severity::Warning,
+                        description: $description,
+                    },
+                    pattern: $default_pattern.clone(),
+                }
+            }
+        }
+
+        impl Rule for $struct_name {
+            fn meta(&self) -> &RuleMetadata {
+                &self.meta
+            }
+
+            fn interested_node_kinds(&self) -> Option<&'static [&'static str]> {
+                Some($node_kinds)
+            }
+
+            fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
+                if let Some(name_node) = node.child_by_field_name("name") {
+                    let name = ctx.node_text(name_node);
+                    if !self.pattern.is_match(name) {
+                        let severity = ctx
+                            .config()
+                            .get_rule_severity(self.meta.id, self.meta.default_severity);
+                        ctx.report_node(
+                            name_node,
+                            self.meta.id,
+                            severity,
+                            format!(concat!($message, " \"{}\""), name),
+                        );
+                    }
+                }
+            }
+
+            fn configure(&mut self, config: &RuleConfig) -> Result<(), String> {
+                configure_pattern(&mut self.pattern, config)
+            }
+        }
+    };
+}
+
+// Generate simple naming rules
+simple_naming_rule!(
+    ClassNameRule,
+    "class-name",
+    "Class Name",
+    "Class names should be PascalCase",
+    PASCAL_CASE,
+    &["class_name_statement", "class_definition"],
+    "Class name should be PascalCase:"
+);
+
+simple_naming_rule!(
+    SignalNameRule,
+    "signal-name",
+    "Signal Name",
+    "Signal names should be snake_case",
+    SNAKE_CASE,
+    &["signal_statement"],
+    "Signal name should be snake_case:"
+);
+
+simple_naming_rule!(
+    ConstantNameRule,
+    "constant-name",
+    "Constant Name",
+    "Constants should be CONSTANT_CASE",
+    CONSTANT_CASE,
+    &["const_statement"],
+    "Constant name should be CONSTANT_CASE:"
+);
+
+simple_naming_rule!(
+    EnumNameRule,
+    "enum-name",
+    "Enum Name",
+    "Enum names should be PascalCase",
+    PASCAL_CASE,
+    &["enum_definition"],
+    "Enum name should be PascalCase:"
+);
+
+// ============================================================================
+// Rules that need custom check_node logic
+// ============================================================================
+
 #[derive(Debug)]
 pub struct FunctionNameRule {
     meta: RuleMetadata,
@@ -52,7 +170,7 @@ impl Rule for FunctionNameRule {
     fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
         if let Some(name_node) = node.child_by_field_name("name") {
             let name = ctx.node_text(name_node);
-
+            // Allow signal handler pattern: _on_NodeName_signal_name
             if !self.pattern.is_match(name) && !SIGNAL_HANDLER.is_match(name) {
                 let severity = ctx
                     .config()
@@ -68,314 +186,7 @@ impl Rule for FunctionNameRule {
     }
 
     fn configure(&mut self, config: &RuleConfig) -> Result<(), String> {
-        if let Some(pattern) = config.options.get("pattern") {
-            if let Some(p) = pattern.as_str() {
-                self.pattern =
-                    Regex::new(p).map_err(|e| format!("Invalid pattern: {}", e))?;
-            }
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-pub struct ClassNameRule {
-    meta: RuleMetadata,
-    pattern: Regex,
-}
-
-impl Default for ClassNameRule {
-    fn default() -> Self {
-        Self {
-            meta: RuleMetadata {
-                id: "class-name",
-                name: "Class Name",
-                category: RuleCategory::Naming,
-                default_severity: Severity::Warning,
-                description: "Class names should be PascalCase",
-            },
-            pattern: PASCAL_CASE.clone(),
-        }
-    }
-}
-
-impl Rule for ClassNameRule {
-    fn meta(&self) -> &RuleMetadata {
-        &self.meta
-    }
-
-    fn interested_node_kinds(&self) -> Option<&'static [&'static str]> {
-        Some(&["class_name_statement", "class_definition"])
-    }
-
-    fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
-        let name_node = if node.kind() == "class_name_statement" {
-            node.child_by_field_name("name")
-        } else {
-            node.child_by_field_name("name")
-        };
-
-        if let Some(name_node) = name_node {
-            let name = ctx.node_text(name_node);
-
-            if !self.pattern.is_match(name) {
-                let severity = ctx
-                    .config()
-                    .get_rule_severity(self.meta.id, self.meta.default_severity);
-                ctx.report_node(
-                    name_node,
-                    self.meta.id,
-                    severity,
-                    format!("Class name \"{}\" should be PascalCase", name),
-                );
-            }
-        }
-    }
-
-    fn configure(&mut self, config: &RuleConfig) -> Result<(), String> {
-        if let Some(pattern) = config.options.get("pattern") {
-            if let Some(p) = pattern.as_str() {
-                self.pattern =
-                    Regex::new(p).map_err(|e| format!("Invalid pattern: {}", e))?;
-            }
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-pub struct SignalNameRule {
-    meta: RuleMetadata,
-    pattern: Regex,
-}
-
-impl Default for SignalNameRule {
-    fn default() -> Self {
-        Self {
-            meta: RuleMetadata {
-                id: "signal-name",
-                name: "Signal Name",
-                category: RuleCategory::Naming,
-                default_severity: Severity::Warning,
-                description: "Signal names should be snake_case",
-            },
-            pattern: SNAKE_CASE.clone(),
-        }
-    }
-}
-
-impl Rule for SignalNameRule {
-    fn meta(&self) -> &RuleMetadata {
-        &self.meta
-    }
-
-    fn interested_node_kinds(&self) -> Option<&'static [&'static str]> {
-        Some(&["signal_statement"])
-    }
-
-    fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
-        if let Some(name_node) = node.child_by_field_name("name") {
-            let name = ctx.node_text(name_node);
-
-            if !self.pattern.is_match(name) {
-                let severity = ctx
-                    .config()
-                    .get_rule_severity(self.meta.id, self.meta.default_severity);
-                ctx.report_node(
-                    name_node,
-                    self.meta.id,
-                    severity,
-                    format!("Signal name \"{}\" should be snake_case", name),
-                );
-            }
-        }
-    }
-
-    fn configure(&mut self, config: &RuleConfig) -> Result<(), String> {
-        if let Some(pattern) = config.options.get("pattern") {
-            if let Some(p) = pattern.as_str() {
-                self.pattern =
-                    Regex::new(p).map_err(|e| format!("Invalid pattern: {}", e))?;
-            }
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-pub struct ConstantNameRule {
-    meta: RuleMetadata,
-    pattern: Regex,
-}
-
-impl Default for ConstantNameRule {
-    fn default() -> Self {
-        Self {
-            meta: RuleMetadata {
-                id: "constant-name",
-                name: "Constant Name",
-                category: RuleCategory::Naming,
-                default_severity: Severity::Warning,
-                description: "Constants should be CONSTANT_CASE",
-            },
-            pattern: CONSTANT_CASE.clone(),
-        }
-    }
-}
-
-impl Rule for ConstantNameRule {
-    fn meta(&self) -> &RuleMetadata {
-        &self.meta
-    }
-
-    fn interested_node_kinds(&self) -> Option<&'static [&'static str]> {
-        Some(&["const_statement"])
-    }
-
-    fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
-        if let Some(name_node) = node.child_by_field_name("name") {
-            let name = ctx.node_text(name_node);
-
-            if !self.pattern.is_match(name) {
-                let severity = ctx
-                    .config()
-                    .get_rule_severity(self.meta.id, self.meta.default_severity);
-                ctx.report_node(
-                    name_node,
-                    self.meta.id,
-                    severity,
-                    format!("Constant name \"{}\" should be CONSTANT_CASE", name),
-                );
-            }
-        }
-    }
-
-    fn configure(&mut self, config: &RuleConfig) -> Result<(), String> {
-        if let Some(pattern) = config.options.get("pattern") {
-            if let Some(p) = pattern.as_str() {
-                self.pattern =
-                    Regex::new(p).map_err(|e| format!("Invalid pattern: {}", e))?;
-            }
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-pub struct VariableNameRule {
-    meta: RuleMetadata,
-    pattern: Regex,
-}
-
-impl Default for VariableNameRule {
-    fn default() -> Self {
-        Self {
-            meta: RuleMetadata {
-                id: "variable-name",
-                name: "Variable Name",
-                category: RuleCategory::Naming,
-                default_severity: Severity::Warning,
-                description: "Variables should be snake_case",
-            },
-            pattern: SNAKE_CASE.clone(),
-        }
-    }
-}
-
-impl Rule for VariableNameRule {
-    fn meta(&self) -> &RuleMetadata {
-        &self.meta
-    }
-
-    fn interested_node_kinds(&self) -> Option<&'static [&'static str]> {
-        Some(&["variable_statement"])
-    }
-
-    fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
-        if let Some(name_node) = node.child_by_field_name("name") {
-            let name = ctx.node_text(name_node);
-
-            if !self.pattern.is_match(name) {
-                let severity = ctx
-                    .config()
-                    .get_rule_severity(self.meta.id, self.meta.default_severity);
-                ctx.report_node(
-                    name_node,
-                    self.meta.id,
-                    severity,
-                    format!("Variable name \"{}\" should be snake_case", name),
-                );
-            }
-        }
-    }
-
-    fn configure(&mut self, config: &RuleConfig) -> Result<(), String> {
-        if let Some(pattern) = config.options.get("pattern") {
-            if let Some(p) = pattern.as_str() {
-                self.pattern =
-                    Regex::new(p).map_err(|e| format!("Invalid pattern: {}", e))?;
-            }
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-pub struct EnumNameRule {
-    meta: RuleMetadata,
-    pattern: Regex,
-}
-
-impl Default for EnumNameRule {
-    fn default() -> Self {
-        Self {
-            meta: RuleMetadata {
-                id: "enum-name",
-                name: "Enum Name",
-                category: RuleCategory::Naming,
-                default_severity: Severity::Warning,
-                description: "Enum names should be PascalCase",
-            },
-            pattern: PASCAL_CASE.clone(),
-        }
-    }
-}
-
-impl Rule for EnumNameRule {
-    fn meta(&self) -> &RuleMetadata {
-        &self.meta
-    }
-
-    fn interested_node_kinds(&self) -> Option<&'static [&'static str]> {
-        Some(&["enum_definition"])
-    }
-
-    fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
-        if let Some(name_node) = node.child_by_field_name("name") {
-            let name = ctx.node_text(name_node);
-
-            if !self.pattern.is_match(name) {
-                let severity = ctx
-                    .config()
-                    .get_rule_severity(self.meta.id, self.meta.default_severity);
-                ctx.report_node(
-                    name_node,
-                    self.meta.id,
-                    severity,
-                    format!("Enum name \"{}\" should be PascalCase", name),
-                );
-            }
-        }
-    }
-
-    fn configure(&mut self, config: &RuleConfig) -> Result<(), String> {
-        if let Some(pattern) = config.options.get("pattern") {
-            if let Some(p) = pattern.as_str() {
-                self.pattern =
-                    Regex::new(p).map_err(|e| format!("Invalid pattern: {}", e))?;
-            }
-        }
-        Ok(())
+        configure_pattern(&mut self.pattern, config)
     }
 }
 
@@ -410,14 +221,12 @@ impl Rule for EnumElementNameRule {
     }
 
     fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
-        // The enumerator node has an identifier child directly
         let name_node = node
             .child_by_field_name("name")
             .or_else(|| node.named_child(0).filter(|c| c.kind() == "identifier"));
 
         if let Some(name_node) = name_node {
             let name = ctx.node_text(name_node);
-
             if !self.pattern.is_match(name) {
                 let severity = ctx
                     .config()
@@ -433,19 +242,9 @@ impl Rule for EnumElementNameRule {
     }
 
     fn configure(&mut self, config: &RuleConfig) -> Result<(), String> {
-        if let Some(pattern) = config.options.get("pattern") {
-            if let Some(p) = pattern.as_str() {
-                self.pattern =
-                    Regex::new(p).map_err(|e| format!("Invalid pattern: {}", e))?;
-            }
-        }
-        Ok(())
+        configure_pattern(&mut self.pattern, config)
     }
 }
-
-// ============================================================================
-// Additional naming rules
-// ============================================================================
 
 #[derive(Debug)]
 pub struct FunctionArgumentNameRule {
@@ -504,12 +303,7 @@ impl Rule for FunctionArgumentNameRule {
     }
 
     fn configure(&mut self, config: &RuleConfig) -> Result<(), String> {
-        if let Some(pattern) = config.options.get("pattern") {
-            if let Some(p) = pattern.as_str() {
-                self.pattern = Regex::new(p).map_err(|e| format!("Invalid pattern: {}", e))?;
-            }
-        }
-        Ok(())
+        configure_pattern(&mut self.pattern, config)
     }
 }
 
@@ -544,7 +338,6 @@ impl Rule for LoopVariableNameRule {
     }
 
     fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
-        // for_statement has an identifier child for the loop variable
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             if child.kind() == "identifier" {
@@ -566,12 +359,7 @@ impl Rule for LoopVariableNameRule {
     }
 
     fn configure(&mut self, config: &RuleConfig) -> Result<(), String> {
-        if let Some(pattern) = config.options.get("pattern") {
-            if let Some(p) = pattern.as_str() {
-                self.pattern = Regex::new(p).map_err(|e| format!("Invalid pattern: {}", e))?;
-            }
-        }
-        Ok(())
+        configure_pattern(&mut self.pattern, config)
     }
 }
 
@@ -628,12 +416,7 @@ impl Rule for SubClassNameRule {
     }
 
     fn configure(&mut self, config: &RuleConfig) -> Result<(), String> {
-        if let Some(pattern) = config.options.get("pattern") {
-            if let Some(p) = pattern.as_str() {
-                self.pattern = Regex::new(p).map_err(|e| format!("Invalid pattern: {}", e))?;
-            }
-        }
-        Ok(())
+        configure_pattern(&mut self.pattern, config)
     }
 }
 
@@ -668,7 +451,6 @@ impl Rule for LoadConstantNameRule {
     }
 
     fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
-        // Check if the const value is a load/preload call
         let node_text = ctx.node_text(node);
         if !node_text.contains("load(") && !node_text.contains("preload(") {
             return;
@@ -694,12 +476,7 @@ impl Rule for LoadConstantNameRule {
     }
 
     fn configure(&mut self, config: &RuleConfig) -> Result<(), String> {
-        if let Some(pattern) = config.options.get("pattern") {
-            if let Some(p) = pattern.as_str() {
-                self.pattern = Regex::new(p).map_err(|e| format!("Invalid pattern: {}", e))?;
-            }
-        }
-        Ok(())
+        configure_pattern(&mut self.pattern, config)
     }
 }
 
@@ -715,7 +492,6 @@ fn is_class_scope_variable(node: Node<'_>) -> bool {
             "function_definition" => return false,
             "source_file" | "source" => return true,
             "body" => {
-                // Check if this body belongs to a class_definition or function
                 if let Some(grandparent) = parent.parent() {
                     if grandparent.kind() == "class_definition" {
                         return true;
@@ -735,262 +511,118 @@ fn has_load_or_preload(node: Node<'_>, ctx: &LintContext<'_>) -> bool {
     text.contains("load(") || text.contains("preload(")
 }
 
-#[derive(Debug)]
-pub struct ClassVariableNameRule {
-    meta: RuleMetadata,
-    pattern: Regex,
-}
-
-impl Default for ClassVariableNameRule {
-    fn default() -> Self {
-        Self {
-            meta: RuleMetadata {
-                id: "class-variable-name",
-                name: "Class Variable Name",
-                category: RuleCategory::Naming,
-                default_severity: Severity::Warning,
-                description: "Class-scope variables should be snake_case",
-            },
-            pattern: SNAKE_CASE.clone(),
-        }
-    }
-}
-
-impl Rule for ClassVariableNameRule {
-    fn meta(&self) -> &RuleMetadata {
-        &self.meta
-    }
-
-    fn interested_node_kinds(&self) -> Option<&'static [&'static str]> {
-        Some(&["variable_statement"])
-    }
-
-    fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
-        // Only check class-scope variables without load/preload
-        if !is_class_scope_variable(node) || has_load_or_preload(node, ctx) {
-            return;
+/// Macro to generate variable naming rules with scope filtering.
+macro_rules! variable_naming_rule {
+    (
+        $struct_name:ident,
+        $id:literal,
+        $name:literal,
+        $description:literal,
+        $default_pattern:expr,
+        $scope_filter:expr,
+        $message:literal
+    ) => {
+        #[derive(Debug)]
+        pub struct $struct_name {
+            meta: RuleMetadata,
+            pattern: Regex,
         }
 
-        if let Some(name_node) = node.child_by_field_name("name") {
-            let name = ctx.node_text(name_node);
-
-            if !self.pattern.is_match(name) {
-                let severity = ctx
-                    .config()
-                    .get_rule_severity(self.meta.id, self.meta.default_severity);
-                ctx.report_node(
-                    name_node,
-                    self.meta.id,
-                    severity,
-                    format!("Class variable \"{}\" should be snake_case", name),
-                );
+        impl Default for $struct_name {
+            fn default() -> Self {
+                Self {
+                    meta: RuleMetadata {
+                        id: $id,
+                        name: $name,
+                        category: RuleCategory::Naming,
+                        default_severity: Severity::Warning,
+                        description: $description,
+                    },
+                    pattern: $default_pattern.clone(),
+                }
             }
         }
-    }
 
-    fn configure(&mut self, config: &RuleConfig) -> Result<(), String> {
-        if let Some(pattern) = config.options.get("pattern") {
-            if let Some(p) = pattern.as_str() {
-                self.pattern = Regex::new(p).map_err(|e| format!("Invalid pattern: {}", e))?;
+        impl Rule for $struct_name {
+            fn meta(&self) -> &RuleMetadata {
+                &self.meta
+            }
+
+            fn interested_node_kinds(&self) -> Option<&'static [&'static str]> {
+                Some(&["variable_statement"])
+            }
+
+            fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
+                let filter: fn(Node<'_>, &LintContext<'_>) -> bool = $scope_filter;
+                if !filter(node, ctx) {
+                    return;
+                }
+
+                if let Some(name_node) = node.child_by_field_name("name") {
+                    let name = ctx.node_text(name_node);
+                    if !self.pattern.is_match(name) {
+                        let severity = ctx
+                            .config()
+                            .get_rule_severity(self.meta.id, self.meta.default_severity);
+                        ctx.report_node(
+                            name_node,
+                            self.meta.id,
+                            severity,
+                            format!(concat!($message, " \"{}\""), name),
+                        );
+                    }
+                }
+            }
+
+            fn configure(&mut self, config: &RuleConfig) -> Result<(), String> {
+                configure_pattern(&mut self.pattern, config)
             }
         }
-        Ok(())
-    }
+    };
 }
 
-#[derive(Debug)]
-pub struct ClassLoadVariableNameRule {
-    meta: RuleMetadata,
-    pattern: Regex,
-}
+variable_naming_rule!(
+    ClassVariableNameRule,
+    "class-variable-name",
+    "Class Variable Name",
+    "Class-scope variables should be snake_case",
+    SNAKE_CASE,
+    |node, ctx| is_class_scope_variable(node) && !has_load_or_preload(node, ctx),
+    "Class variable should be snake_case:"
+);
 
-impl Default for ClassLoadVariableNameRule {
-    fn default() -> Self {
-        Self {
-            meta: RuleMetadata {
-                id: "class-load-variable-name",
-                name: "Class Load Variable Name",
-                category: RuleCategory::Naming,
-                default_severity: Severity::Warning,
-                description: "Class-scope load/preload variables should be PascalCase or snake_case",
-            },
-            pattern: PASCAL_OR_SNAKE.clone(),
-        }
-    }
-}
+variable_naming_rule!(
+    ClassLoadVariableNameRule,
+    "class-load-variable-name",
+    "Class Load Variable Name",
+    "Class-scope load/preload variables should be PascalCase or snake_case",
+    PASCAL_OR_SNAKE,
+    |node, ctx| is_class_scope_variable(node) && has_load_or_preload(node, ctx),
+    "Class load variable should be PascalCase or snake_case:"
+);
 
-impl Rule for ClassLoadVariableNameRule {
-    fn meta(&self) -> &RuleMetadata {
-        &self.meta
-    }
+variable_naming_rule!(
+    FunctionVariableNameRule,
+    "function-variable-name",
+    "Function Variable Name",
+    "Function-scope variables should be snake_case",
+    SNAKE_CASE,
+    |node, ctx| !is_class_scope_variable(node) && !has_load_or_preload(node, ctx),
+    "Function variable should be snake_case:"
+);
 
-    fn interested_node_kinds(&self) -> Option<&'static [&'static str]> {
-        Some(&["variable_statement"])
-    }
-
-    fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
-        // Only check class-scope variables with load/preload
-        if !is_class_scope_variable(node) || !has_load_or_preload(node, ctx) {
-            return;
-        }
-
-        if let Some(name_node) = node.child_by_field_name("name") {
-            let name = ctx.node_text(name_node);
-
-            if !self.pattern.is_match(name) {
-                let severity = ctx
-                    .config()
-                    .get_rule_severity(self.meta.id, self.meta.default_severity);
-                ctx.report_node(
-                    name_node,
-                    self.meta.id,
-                    severity,
-                    format!(
-                        "Class load variable \"{}\" should be PascalCase or snake_case",
-                        name
-                    ),
-                );
-            }
-        }
-    }
-
-    fn configure(&mut self, config: &RuleConfig) -> Result<(), String> {
-        if let Some(pattern) = config.options.get("pattern") {
-            if let Some(p) = pattern.as_str() {
-                self.pattern = Regex::new(p).map_err(|e| format!("Invalid pattern: {}", e))?;
-            }
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-pub struct FunctionVariableNameRule {
-    meta: RuleMetadata,
-    pattern: Regex,
-}
-
-impl Default for FunctionVariableNameRule {
-    fn default() -> Self {
-        Self {
-            meta: RuleMetadata {
-                id: "function-variable-name",
-                name: "Function Variable Name",
-                category: RuleCategory::Naming,
-                default_severity: Severity::Warning,
-                description: "Function-scope variables should be snake_case",
-            },
-            pattern: SNAKE_CASE.clone(),
-        }
-    }
-}
-
-impl Rule for FunctionVariableNameRule {
-    fn meta(&self) -> &RuleMetadata {
-        &self.meta
-    }
-
-    fn interested_node_kinds(&self) -> Option<&'static [&'static str]> {
-        Some(&["variable_statement"])
-    }
-
-    fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
-        // Only check function-scope variables without load/preload
-        if is_class_scope_variable(node) || has_load_or_preload(node, ctx) {
-            return;
-        }
-
-        if let Some(name_node) = node.child_by_field_name("name") {
-            let name = ctx.node_text(name_node);
-
-            if !self.pattern.is_match(name) {
-                let severity = ctx
-                    .config()
-                    .get_rule_severity(self.meta.id, self.meta.default_severity);
-                ctx.report_node(
-                    name_node,
-                    self.meta.id,
-                    severity,
-                    format!("Function variable \"{}\" should be snake_case", name),
-                );
-            }
-        }
-    }
-
-    fn configure(&mut self, config: &RuleConfig) -> Result<(), String> {
-        if let Some(pattern) = config.options.get("pattern") {
-            if let Some(p) = pattern.as_str() {
-                self.pattern = Regex::new(p).map_err(|e| format!("Invalid pattern: {}", e))?;
-            }
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-pub struct FunctionPreloadVariableNameRule {
-    meta: RuleMetadata,
-    pattern: Regex,
-}
-
-impl Default for FunctionPreloadVariableNameRule {
-    fn default() -> Self {
-        Self {
-            meta: RuleMetadata {
-                id: "function-preload-variable-name",
-                name: "Function Preload Variable Name",
-                category: RuleCategory::Naming,
-                default_severity: Severity::Warning,
-                description: "Function-scope preload variables should be PascalCase",
-            },
-            pattern: PASCAL_CASE.clone(),
-        }
-    }
-}
-
-impl Rule for FunctionPreloadVariableNameRule {
-    fn meta(&self) -> &RuleMetadata {
-        &self.meta
-    }
-
-    fn interested_node_kinds(&self) -> Option<&'static [&'static str]> {
-        Some(&["variable_statement"])
-    }
-
-    fn check_node(&self, node: Node<'_>, ctx: &mut LintContext<'_>) {
-        // Only check function-scope variables with preload (not load)
+variable_naming_rule!(
+    FunctionPreloadVariableNameRule,
+    "function-preload-variable-name",
+    "Function Preload Variable Name",
+    "Function-scope preload variables should be PascalCase",
+    PASCAL_CASE,
+    |node, ctx| {
         if is_class_scope_variable(node) {
-            return;
+            return false;
         }
-
         let text = ctx.node_text(node);
-        if !text.contains("preload(") {
-            return;
-        }
-
-        if let Some(name_node) = node.child_by_field_name("name") {
-            let name = ctx.node_text(name_node);
-
-            if !self.pattern.is_match(name) {
-                let severity = ctx
-                    .config()
-                    .get_rule_severity(self.meta.id, self.meta.default_severity);
-                ctx.report_node(
-                    name_node,
-                    self.meta.id,
-                    severity,
-                    format!("Function preload variable \"{}\" should be PascalCase", name),
-                );
-            }
-        }
-    }
-
-    fn configure(&mut self, config: &RuleConfig) -> Result<(), String> {
-        if let Some(pattern) = config.options.get("pattern") {
-            if let Some(p) = pattern.as_str() {
-                self.pattern = Regex::new(p).map_err(|e| format!("Invalid pattern: {}", e))?;
-            }
-        }
-        Ok(())
-    }
-}
+        text.contains("preload(")
+    },
+    "Function preload variable should be PascalCase:"
+);

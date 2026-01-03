@@ -12,13 +12,13 @@ pub fn format_class_definition(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     // Get class name
     let name = node
         .child_by_field_name("name")
-        .map(|n| node_text(n, ctx))
+        .map(|n| ctx.node_text(n))
         .unwrap_or("_");
 
     // Get extends clause if present
     let extends = node
         .child_by_field_name("extends")
-        .map(|n| format!(" extends {}", node_text(n, ctx)))
+        .map(|n| format!(" extends {}", ctx.node_text(n)))
         .unwrap_or_default();
 
     ctx.output
@@ -76,7 +76,7 @@ pub fn format_function_definition(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     // Get function name
     let name = node
         .child_by_field_name("name")
-        .map(|n| node_text(n, ctx))
+        .map(|n| ctx.node_text(n))
         .unwrap_or("_");
 
     // Get parameters
@@ -88,7 +88,7 @@ pub fn format_function_definition(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     // Get return type if present
     let return_type = node
         .child_by_field_name("return_type")
-        .map(|t| format!(" -> {}", node_text(t, ctx)))
+        .map(|t| format!(" -> {}", ctx.node_text(t)))
         .unwrap_or_default();
 
     // Build function signature
@@ -132,7 +132,7 @@ fn format_parameters(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
 fn format_parameter(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
     match node.kind() {
         // Simple identifier parameter (untyped)
-        "identifier" => node_text(node, ctx).to_string(),
+        "identifier" => ctx.node_text(node).to_string(),
 
         // Typed parameter: look for identifier child and type
         "typed_parameter" | "typed_identifier" => {
@@ -140,13 +140,13 @@ fn format_parameter(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
             let name = node
                 .child_by_field_name("name")
                 .or_else(|| node.named_child(0).filter(|c| c.kind() == "identifier"))
-                .map(|n| node_text(n, ctx))
+                .map(|n| ctx.node_text(n))
                 .unwrap_or("_");
 
             // Find the type
             let type_hint = node
                 .child_by_field_name("type")
-                .map(|t| format!(": {}", node_text(t, ctx).trim()))
+                .map(|t| format!(": {}", ctx.node_text(t).trim()))
                 .unwrap_or_default();
 
             format!("{}{}", name, type_hint)
@@ -157,7 +157,7 @@ fn format_parameter(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
             let name = node
                 .named_child(0)
                 .filter(|c| c.kind() == "identifier")
-                .map(|n| node_text(n, ctx))
+                .map(|n| ctx.node_text(n))
                 .unwrap_or("_");
 
             // Default value is typically the last named child
@@ -179,13 +179,13 @@ fn format_parameter(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
             let name = children
                 .iter()
                 .find(|c| c.kind() == "identifier")
-                .map(|n| node_text(*n, ctx))
+                .map(|n| ctx.node_text(*n))
                 .unwrap_or("_");
 
             let type_hint = children
                 .iter()
                 .find(|c| c.kind() == "type")
-                .map(|t| format!(": {}", node_text(*t, ctx).trim()))
+                .map(|t| format!(": {}", ctx.node_text(*t).trim()))
                 .unwrap_or_default();
 
             // Default value is the last named child that isn't identifier or type
@@ -200,7 +200,7 @@ fn format_parameter(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
         }
 
         // Fallback: just use the node text
-        _ => node_text(node, ctx).trim().to_string(),
+        _ => ctx.node_text(node).trim().to_string(),
     }
 }
 
@@ -251,7 +251,7 @@ pub fn format_variable_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
         let anns: Vec<_> = annotations_node
             .children(&mut cursor)
             .filter(|c| c.kind() == "annotation")
-            .map(|a| node_text(a, ctx).trim().to_string())
+            .map(|a| ctx.node_text(a).trim().to_string())
             .collect();
         if anns.is_empty() {
             String::new()
@@ -263,13 +263,13 @@ pub fn format_variable_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     };
 
     // Check if this is an inferred type assignment (:=)
-    let source_text = node_text(node, ctx);
+    let source_text = ctx.node_text(node);
     let is_inferred = source_text.contains(":=");
 
     // Get variable name
     let name = node
         .child_by_field_name("name")
-        .map(|n| node_text(n, ctx))
+        .map(|n| ctx.node_text(n))
         .unwrap_or("_");
 
     // Get initial value
@@ -288,7 +288,7 @@ pub fn format_variable_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
         // Explicit type or no type
         let type_hint = node
             .child_by_field_name("type")
-            .map(|t| format!(": {}", node_text(t, ctx).trim()))
+            .map(|t| format!(": {}", ctx.node_text(t).trim()))
             .unwrap_or_default();
 
         let value = value_node
@@ -325,13 +325,13 @@ pub fn format_const_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     let indent = ctx.indent_str();
 
     // Check if this is an inferred type constant (:=)
-    let source_text = node_text(node, ctx);
+    let source_text = ctx.node_text(node);
     let is_inferred = source_text.contains(":=");
 
     // Get constant name
     let name = node
         .child_by_field_name("name")
-        .map(|n| node_text(n, ctx))
+        .map(|n| ctx.node_text(n))
         .unwrap_or("_");
 
     // Get value
@@ -350,7 +350,7 @@ pub fn format_const_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
         // Get type hint
         let type_hint = node
             .child_by_field_name("type")
-            .map(|t| format!(": {}", node_text(t, ctx)))
+            .map(|t| format!(": {}", ctx.node_text(t)))
             .unwrap_or_default();
 
         // Get value
@@ -371,7 +371,7 @@ pub fn format_signal_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     // Get signal name
     let name = node
         .child_by_field_name("name")
-        .map(|n| node_text(n, ctx))
+        .map(|n| ctx.node_text(n))
         .unwrap_or("_");
 
     // Get parameters if present
@@ -411,7 +411,7 @@ pub fn format_enum_definition(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     // Get enum name (optional for anonymous enums)
     let name = node
         .child_by_field_name("name")
-        .map(|n| format!(" {}", node_text(n, ctx)))
+        .map(|n| format!(" {}", ctx.node_text(n)))
         .unwrap_or_default();
 
     // Get enum body
@@ -449,8 +449,8 @@ fn format_enum_members(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
 fn format_enum_member(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
     let name = node
         .child_by_field_name("name")
-        .map(|n| node_text(n, ctx))
-        .unwrap_or_else(|| node_text(node, ctx));
+        .map(|n| ctx.node_text(n))
+        .unwrap_or_else(|| ctx.node_text(node));
 
     let value = node
         .child_by_field_name("value")
@@ -463,8 +463,3 @@ fn format_enum_member(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
     }
 }
 
-fn node_text<'a>(node: Node<'_>, ctx: &'a FormatContext<'_>) -> &'a str {
-    let start = node.start_byte();
-    let end = node.end_byte();
-    &ctx.source[start..end]
-}

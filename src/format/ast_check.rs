@@ -27,105 +27,6 @@ impl AstCheckResult {
     }
 }
 
-/// Compare two ASTs for structural equivalence.
-///
-/// This compares:
-/// - Node kinds
-/// - Named child counts
-/// - Field names and their values
-/// - Literal text for terminal nodes
-///
-/// This ignores:
-/// - Byte offsets
-/// - Row/column positions
-/// - Whitespace
-pub fn compare_ast(original: &Tree, formatted: &Tree) -> AstCheckResult {
-    compare_nodes(
-        original.root_node(),
-        formatted.root_node(),
-        original.root_node(),
-        formatted.root_node(),
-        String::new(),
-    )
-}
-
-/// Compare two nodes recursively.
-fn compare_nodes<'a>(
-    orig: Node<'a>,
-    fmt: Node<'a>,
-    orig_root: Node<'a>,
-    fmt_root: Node<'a>,
-    path: String,
-) -> AstCheckResult {
-    // Compare node kinds
-    if orig.kind() != fmt.kind() {
-        return AstCheckResult::Different {
-            path,
-            difference: format!(
-                "node kind differs: '{}' vs '{}'",
-                orig.kind(),
-                fmt.kind()
-            ),
-        };
-    }
-
-    // For terminal nodes (no named children), compare the text content
-    // But only for nodes that represent actual values (literals, identifiers)
-    if orig.named_child_count() == 0 && fmt.named_child_count() == 0 {
-        // These are leaf nodes - their meaning comes from the source text
-        // We need to compare the actual text for literals and identifiers
-        if is_value_node(orig.kind()) {
-            let orig_text = node_text(orig, orig_root);
-            let fmt_text = node_text(fmt, fmt_root);
-            if orig_text != fmt_text {
-                return AstCheckResult::Different {
-                    path,
-                    difference: format!(
-                        "{} value differs: '{}' vs '{}'",
-                        orig.kind(),
-                        orig_text,
-                        fmt_text
-                    ),
-                };
-            }
-        }
-    }
-
-    // Compare named child count
-    if orig.named_child_count() != fmt.named_child_count() {
-        return AstCheckResult::Different {
-            path,
-            difference: format!(
-                "named child count differs: {} vs {}",
-                orig.named_child_count(),
-                fmt.named_child_count()
-            ),
-        };
-    }
-
-    // Compare named children recursively
-    let mut orig_cursor = orig.walk();
-    let mut fmt_cursor = fmt.walk();
-
-    let orig_children: Vec<_> = orig.named_children(&mut orig_cursor).collect();
-    let fmt_children: Vec<_> = fmt.named_children(&mut fmt_cursor).collect();
-
-    for (i, (orig_child, fmt_child)) in orig_children.iter().zip(fmt_children.iter()).enumerate() {
-        let child_path = if path.is_empty() {
-            format!("{}[{}]", orig_child.kind(), i)
-        } else {
-            format!("{}.{}[{}]", path, orig_child.kind(), i)
-        };
-
-        let result = compare_nodes(*orig_child, *fmt_child, orig_root, fmt_root, child_path);
-        if !result.is_equivalent() {
-            return result;
-        }
-    }
-
-    AstCheckResult::Equivalent
-}
-
 /// Check if a node kind represents a value that should be compared textually.
 fn is_value_node(kind: &str) -> bool {
     matches!(
@@ -141,16 +42,6 @@ fn is_value_node(kind: &str) -> bool {
             | "self"
             | "type"
     )
-}
-
-/// Extract the source text for a node.
-///
-/// Note: This requires access to the original source, which we get via the root node.
-/// In practice, we'll need to pass the source string separately.
-fn node_text<'a>(_node: Node<'a>, _root: Node<'a>) -> &'a str {
-    // This is a placeholder - we need the actual source text
-    // The real implementation will need the source string
-    ""
 }
 
 /// Compare two ASTs with access to their source strings.

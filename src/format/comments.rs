@@ -50,16 +50,6 @@ impl Comments {
     pub fn get_inline(&self, line: usize) -> Option<&String> {
         self.inline.get(&line)
     }
-
-    /// Check if a line has a standalone comment.
-    pub fn has_standalone(&self, line: usize) -> bool {
-        self.standalone.contains_key(&line)
-    }
-
-    /// Check if a line has an inline comment.
-    pub fn has_inline(&self, line: usize) -> bool {
-        self.inline.contains_key(&line)
-    }
 }
 
 /// Find the start of a comment in a line, handling strings.
@@ -98,8 +88,8 @@ mod tests {
     fn test_standalone_comment() {
         let source = "# This is a comment\nvar x = 1";
         let comments = Comments::extract(source);
-        assert!(comments.has_standalone(1));
-        assert!(!comments.has_standalone(2));
+        assert!(comments.get_standalone(1).is_some());
+        assert!(comments.get_standalone(2).is_none());
         assert_eq!(
             comments.get_standalone(1),
             Some(&"# This is a comment".to_string())
@@ -110,8 +100,8 @@ mod tests {
     fn test_inline_comment() {
         let source = "var x = 1  # inline comment";
         let comments = Comments::extract(source);
-        assert!(!comments.has_standalone(1));
-        assert!(comments.has_inline(1));
+        assert!(comments.get_standalone(1).is_none());
+        assert!(comments.get_inline(1).is_some());
         assert_eq!(
             comments.get_inline(1),
             Some(&"# inline comment".to_string())
@@ -122,15 +112,15 @@ mod tests {
     fn test_comment_in_string() {
         let source = "var x = \"# not a comment\"";
         let comments = Comments::extract(source);
-        assert!(!comments.has_standalone(1));
-        assert!(!comments.has_inline(1));
+        assert!(comments.get_standalone(1).is_none());
+        assert!(comments.get_inline(1).is_none());
     }
 
     #[test]
     fn test_indented_standalone_comment() {
         let source = "func foo():\n\t# indented comment\n\tpass";
         let comments = Comments::extract(source);
-        assert!(comments.has_standalone(2));
+        assert!(comments.get_standalone(2).is_some());
         assert_eq!(
             comments.get_standalone(2),
             Some(&"\t# indented comment".to_string())

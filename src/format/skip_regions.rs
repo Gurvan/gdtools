@@ -46,14 +46,6 @@ impl SkipRegions {
         self.ranges.iter().any(|(start, end)| line >= *start && line <= *end)
     }
 
-    /// Get the skip region containing a line, if any.
-    pub fn get_region(&self, line: usize) -> Option<(usize, usize)> {
-        self.ranges
-            .iter()
-            .find(|(start, end)| line >= *start && line <= *end)
-            .copied()
-    }
-
     /// Check if empty (no skip regions).
     pub fn is_empty(&self) -> bool {
         self.ranges.is_empty()

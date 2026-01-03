@@ -1,4 +1,4 @@
-use tree_sitter::Tree;
+use tree_sitter::{Node, Tree};
 
 use super::options::FormatOptions;
 use super::output::FormattedOutput;
@@ -78,8 +78,8 @@ impl<'a> FormatContext<'a> {
             .sum()
     }
 
-    /// Check if a string would exceed max line length.
-    pub fn exceeds_line_length(&self, s: &str) -> bool {
-        self.visual_width(s) > self.options.max_line_length
+    /// Get the source text for a node.
+    pub fn node_text(&self, node: Node<'_>) -> &str {
+        &self.source[node.start_byte()..node.end_byte()]
     }
 }

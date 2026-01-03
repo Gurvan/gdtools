@@ -7,11 +7,11 @@ pub fn format_expression(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
     match node.kind() {
         // Literals
         "integer" | "float" | "string" | "true" | "false" | "null" => {
-            node_text(node, ctx).to_string()
+            ctx.node_text(node).to_string()
         }
 
         // Identifiers
-        "identifier" | "name" => node_text(node, ctx).to_string(),
+        "identifier" | "name" => ctx.node_text(node).to_string(),
 
         // Self reference
         "self" => "self".to_string(),
@@ -68,15 +68,10 @@ pub fn format_expression(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
         "get_node" => format_get_node(node, ctx),
 
         // Default: return source text
-        _ => node_text(node, ctx).to_string(),
+        _ => ctx.node_text(node).to_string(),
     }
 }
 
-fn node_text<'a>(node: Node<'_>, ctx: &'a FormatContext<'_>) -> &'a str {
-    let start = node.start_byte();
-    let end = node.end_byte();
-    &ctx.source[start..end]
-}
 
 /// Format binary operation: `a + b`, `a * b`, `a not in b`, etc.
 fn format_binary_operation(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
@@ -87,7 +82,7 @@ fn format_binary_operation(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
 
     if let (Some(l), Some(op), Some(r)) = (left, operator, right) {
         let left_text = format_expression(l, ctx);
-        let op_text = node_text(op, ctx);
+        let op_text = ctx.node_text(op);
         let right_text = format_expression(r, ctx);
         return format!("{} {} {}", left_text, op_text, right_text);
     }
@@ -119,13 +114,13 @@ fn format_binary_operation(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
     // Standard binary operations: 3 children (left, operator, right)
     if children.len() >= 3 {
         let left_text = format_expression(children[0], ctx);
-        let op_text = node_text(children[1], ctx).trim();
+        let op_text = ctx.node_text(children[1]).trim();
         let right_text = format_expression(children[2], ctx);
         return format!("{} {} {}", left_text, op_text, right_text);
     }
 
     // Fallback
-    node_text(node, ctx).to_string()
+    ctx.node_text(node).to_string()
 }
 
 /// Format unary operation: `-x`, `not x`, etc.
@@ -134,7 +129,7 @@ fn format_unary_operation(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
     let children: Vec<_> = node.children(&mut cursor).collect();
 
     if children.len() >= 2 {
-        let op = node_text(children[0], ctx);
+        let op = ctx.node_text(children[0]);
         let operand = format_expression(children[1], ctx);
 
         // "not" needs a space, "-" and "~" don't
@@ -144,7 +139,7 @@ fn format_unary_operation(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
             format!("{}{}", op, operand)
         }
     } else {
-        node_text(node, ctx).to_string()
+        ctx.node_text(node).to_string()
     }
 }
 
@@ -161,7 +156,7 @@ fn format_comparison(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
             format_expression(*child, ctx)
         } else {
             // Operator
-            node_text(*child, ctx).to_string()
+            ctx.node_text(*child).to_string()
         };
         parts.push(text);
     }
@@ -178,11 +173,11 @@ fn format_boolean_operation(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
     match (left, operator, right) {
         (Some(l), Some(op), Some(r)) => {
             let left_text = format_expression(l, ctx);
-            let op_text = node_text(op, ctx);
+            let op_text = ctx.node_text(op);
             let right_text = format_expression(r, ctx);
             format!("{} {} {}", left_text, op_text, right_text)
         }
-        _ => node_text(node, ctx).to_string(),
+        _ => ctx.node_text(node).to_string(),
     }
 }
 
@@ -235,7 +230,7 @@ fn format_call(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
     }
 
     // Fallback
-    node_text(node, ctx).to_string()
+    ctx.node_text(node).to_string()
 }
 
 /// Format argument list.
@@ -258,10 +253,10 @@ fn format_attribute(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
     match (object, attribute) {
         (Some(obj), Some(attr)) => {
             let obj_text = format_expression(obj, ctx);
-            let attr_text = node_text(attr, ctx);
+            let attr_text = ctx.node_text(attr);
             format!("{}.{}", obj_text, attr_text)
         }
-        _ => node_text(node, ctx).to_string(),
+        _ => ctx.node_text(node).to_string(),
     }
 }
 
@@ -276,7 +271,7 @@ fn format_subscript(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
             let sub_text = format_expression(sub, ctx);
             format!("{}[{}]", val_text, sub_text)
         }
-        _ => node_text(node, ctx).to_string(),
+        _ => ctx.node_text(node).to_string(),
     }
 }
 
@@ -299,7 +294,7 @@ fn format_array(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
 
     if is_multiline {
         // Preserve multiline arrays verbatim to keep structure and comments
-        return node_text(node, ctx).to_string();
+        return ctx.node_text(node).to_string();
     }
 
     let elements: Vec<String> = children.iter().map(|c| format_expression(*c, ctx)).collect();
@@ -372,7 +367,7 @@ fn format_pair(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
     }
 
     // Last resort: return original text
-    node_text(node, ctx).to_string()
+    ctx.node_text(node).to_string()
 }
 
 /// Format parenthesized expression: `(expr)`
@@ -385,7 +380,7 @@ fn format_parenthesized(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
     if let Some(expr) = inner {
         format!("({})", format_expression(expr, ctx))
     } else {
-        node_text(node, ctx).to_string()
+        ctx.node_text(node).to_string()
     }
 }
 
@@ -400,7 +395,7 @@ fn format_assignment(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
             let right_text = format_expression(r, ctx);
             format!("{} = {}", left_text, right_text)
         }
-        _ => node_text(node, ctx).to_string(),
+        _ => ctx.node_text(node).to_string(),
     }
 }
 
@@ -413,11 +408,11 @@ fn format_augmented_assignment(node: Node<'_>, ctx: &FormatContext<'_>) -> Strin
     match (left, operator, right) {
         (Some(l), Some(op), Some(r)) => {
             let left_text = format_expression(l, ctx);
-            let op_text = node_text(op, ctx);
+            let op_text = ctx.node_text(op);
             let right_text = format_expression(r, ctx);
             format!("{} {} {}", left_text, op_text, right_text)
         }
-        _ => node_text(node, ctx).to_string(),
+        _ => ctx.node_text(node).to_string(),
     }
 }
 
@@ -447,7 +442,7 @@ fn format_ternary(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
                 let false_text = format_expression(children[4], ctx);
                 format!("{} if {} else {}", true_text, cond_text, false_text)
             } else {
-                node_text(node, ctx).to_string()
+                ctx.node_text(node).to_string()
             }
         }
     }
@@ -456,7 +451,7 @@ fn format_ternary(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
 /// Format lambda: `func(x): return x * 2`
 fn format_lambda(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
     // For now, just return source text (lambdas are complex)
-    node_text(node, ctx).to_string()
+    ctx.node_text(node).to_string()
 }
 
 /// Format type cast: `x as Type`
@@ -467,10 +462,10 @@ fn format_cast(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
     match (value, cast_type) {
         (Some(v), Some(t)) => {
             let val_text = format_expression(v, ctx);
-            let type_text = node_text(t, ctx);
+            let type_text = ctx.node_text(t);
             format!("{} as {}", val_text, type_text)
         }
-        _ => node_text(node, ctx).to_string(),
+        _ => ctx.node_text(node).to_string(),
     }
 }
 
@@ -482,11 +477,11 @@ fn format_await(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
     if let Some(e) = expr {
         format!("await {}", format_expression(e, ctx))
     } else {
-        node_text(node, ctx).to_string()
+        ctx.node_text(node).to_string()
     }
 }
 
 /// Format get_node: `$NodePath` or `%UniqueNode`
 fn format_get_node(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
-    node_text(node, ctx).to_string()
+    ctx.node_text(node).to_string()
 }

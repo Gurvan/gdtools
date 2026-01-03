@@ -21,12 +21,12 @@ pub fn format_extends_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     });
 
     if let Some(tn) = type_node {
-        let type_text = node_text(tn, ctx).trim();
+        let type_text = ctx.node_text(tn).trim();
         ctx.output
             .push_mapped(format!("{}extends {}", indent, type_text), line);
     } else {
         // Fallback: use source text
-        let text = node_text(node, ctx);
+        let text = ctx.node_text(node);
         ctx.output
             .push_mapped(format!("{}{}", indent, text.trim()), line);
     }
@@ -47,11 +47,11 @@ pub fn format_class_name_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) 
     });
 
     if let Some(nn) = name_node {
-        let name = node_text(nn, ctx).trim();
+        let name = ctx.node_text(nn).trim();
         ctx.output
             .push_mapped(format!("{}class_name {}", indent, name), line);
     } else {
-        let text = node_text(node, ctx);
+        let text = ctx.node_text(node);
         ctx.output
             .push_mapped(format!("{}{}", indent, text.trim()), line);
     }
@@ -112,13 +112,6 @@ pub fn format_annotation(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     let indent = ctx.indent_str();
 
     // Get the annotation text
-    let text = node_text(node, ctx).trim().to_string();
+    let text = ctx.node_text(node).trim().to_string();
     ctx.output.push_mapped(format!("{}{}", indent, text), line);
-}
-
-/// Get the text of a node from source.
-pub fn node_text<'a>(node: Node<'_>, ctx: &'a FormatContext<'_>) -> &'a str {
-    let start = node.start_byte();
-    let end = node.end_byte();
-    &ctx.source[start..end]
 }

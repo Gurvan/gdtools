@@ -1,9 +1,14 @@
 use std::collections::HashSet;
 
+use once_cell::sync::Lazy;
+use regex::Regex;
 use tree_sitter::Node;
 
 use crate::config::RuleConfig;
 use crate::lint::{LintContext, Rule, RuleCategory, RuleMetadata, Severity};
+
+static LOAD_PATTERN: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"(load|preload)\s*\(\s*["']([^"']+)["']\s*\)"#).unwrap());
 
 #[derive(Debug)]
 pub struct UnnecessaryPassRule {
@@ -281,13 +286,9 @@ impl Rule for DuplicatedLoadRule {
         let mut loads: std::collections::HashMap<String, (usize, usize)> =
             std::collections::HashMap::new();
 
-        // Find all load/preload calls with string arguments
-        let load_pattern =
-            regex::Regex::new(r#"(load|preload)\s*\(\s*["']([^"']+)["']\s*\)"#).unwrap();
-
         let mut diagnostics = Vec::new();
         for (line_idx, line) in source.lines().enumerate() {
-            for cap in load_pattern.captures_iter(line) {
+            for cap in LOAD_PATTERN.captures_iter(line) {
                 let path = cap.get(2).unwrap().as_str().to_string();
                 let col = cap.get(0).unwrap().start() + 1;
 

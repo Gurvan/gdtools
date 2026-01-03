@@ -67,25 +67,11 @@ impl Default for FormatOptions {
 }
 
 impl FormatOptions {
-    /// Create options with tabs indentation.
-    pub fn with_tabs() -> Self {
-        Self {
-            indent_style: IndentStyle::Tabs,
-            ..Default::default()
-        }
-    }
-
     /// Create options with spaces indentation.
     pub fn with_spaces(n: usize) -> Self {
         Self {
             indent_style: IndentStyle::Spaces(n),
             ..Default::default()
         }
-    }
-
-    /// Set the maximum line length.
-    pub fn line_length(mut self, len: usize) -> Self {
-        self.max_line_length = len;
-        self
     }
 }

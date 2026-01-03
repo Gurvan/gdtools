@@ -144,7 +144,7 @@ pub fn format_for_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     let var = node
         .child_by_field_name("variable")
         .or_else(|| node.child_by_field_name("left"))
-        .map(|v| node_text(v, ctx))
+        .map(|v| ctx.node_text(v))
         .unwrap_or("_");
 
     // Get iterable
@@ -205,72 +205,4 @@ pub fn format_match_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
             ctx.output.push_mapped(line_content.to_string(), line_num);
         }
     }
-}
-
-/// Format a match branch.
-#[allow(dead_code)]
-fn format_match_branch(node: Node<'_>, ctx: &mut FormatContext<'_>) {
-    let line = node.start_position().row + 1;
-    let indent = ctx.indent_str();
-
-    // Get pattern - try field name first, then first named child
-    let pattern = node
-        .child_by_field_name("pattern")
-        .or_else(|| node.named_child(0))
-        .map(|p| format_pattern(p, ctx))
-        .unwrap_or_else(|| "_".to_string());
-
-    ctx.output
-        .push_mapped(format!("{}{}:", indent, pattern), line);
-
-    // Format body - try field name first, then look for body node
-    let body = node
-        .child_by_field_name("body")
-        .or_else(|| {
-            node.children(&mut node.walk())
-                .find(|c| c.kind() == "body")
-        });
-
-    if let Some(body_node) = body {
-        ctx.indent();
-        format_block(body_node, ctx);
-        ctx.dedent();
-    }
-}
-
-/// Format a match pattern.
-#[allow(dead_code)]
-fn format_pattern(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
-    match node.kind() {
-        "pattern_binding" => {
-            let name = node
-                .child_by_field_name("name")
-                .map(|n| node_text(n, ctx))
-                .unwrap_or("_");
-            format!("var {}", name)
-        }
-        "pattern_array" => {
-            let mut cursor = node.walk();
-            let elements: Vec<_> = node
-                .children(&mut cursor)
-                .filter(|c| c.kind() != "[" && c.kind() != "]" && c.kind() != ",")
-                .collect();
-            let patterns: Vec<String> = elements.iter().map(|e| format_pattern(*e, ctx)).collect();
-            format!("[{}]", patterns.join(", "))
-        }
-        "pattern_dictionary" => {
-            // Dictionary pattern matching
-            node_text(node, ctx).to_string()
-        }
-        _ => {
-            // Literal or identifier pattern
-            format_expression(node, ctx)
-        }
-    }
-}
-
-fn node_text<'a>(node: Node<'_>, ctx: &'a FormatContext<'_>) -> &'a str {
-    let start = node.start_byte();
-    let end = node.end_byte();
-    &ctx.source[start..end]
 }
