@@ -596,20 +596,43 @@ var x = 1
 }
 
 #[test]
-fn test_doc_comment_ordering() {
+fn test_doc_comment_stays_with_declaration() {
+    // Doc comments (##) should stay attached to the following declaration
+    let input = r#"extends Node
+
+
+func foo():
+	pass
+
+
+## Documents the variable
+var x = 1
+"#;
+    let expected = r#"extends Node
+
+## Documents the variable
+var x = 1
+
+
+func foo():
+	pass
+"#;
+    assert_eq!(reorder(input), expected);
+}
+
+#[test]
+fn test_trailing_doc_comment_preserved() {
+    // A trailing ## comment with nothing after it should be preserved in place
     let input = r#"extends Node
 
 var x = 1
 
-## This is a class doc comment.
+## This is a trailing comment.
 "#;
-    let expected = r#"extends Node
-
-## This is a class doc comment.
-
-var x = 1
-"#;
-    assert_eq!(reorder(input), expected);
+    // The comment stays at the end since there's nothing for it to attach to
+    let result = reorder(input);
+    assert!(result.contains("var x = 1"));
+    assert!(result.contains("## This is a trailing comment."));
 }
 
 // ============================================================================
@@ -1088,4 +1111,57 @@ var health: int = 100
     let result = reorder(input);
     assert!(result.contains("@export_range"));
     assert!(result.contains("var health"));
+}
+
+#[test]
+fn test_inline_comments_not_duplicated() {
+    // Inline comments should NOT be treated as preceding comments for the next variable
+    // This was a bug where `var a # comment` followed by `var b` would duplicate `var a`
+    let input = r#"extends Node
+
+class_name Foo
+
+var a: String = ""  # comment a
+var b: String = ""  # comment b
+"#;
+    let result = reorder(input);
+    // Each variable should appear exactly once
+    assert_eq!(result.matches("var a").count(), 1, "var a should appear exactly once");
+    assert_eq!(result.matches("var b").count(), 1, "var b should appear exactly once");
+    // Comments should be preserved
+    assert!(result.contains("# comment a"));
+    assert!(result.contains("# comment b"));
+}
+
+#[test]
+fn test_inline_comments_with_reordering() {
+    // Same test but with header items that get reordered
+    let input = r#"extends Node
+
+class_name Foo
+
+var shield_damage: float
+
+@export_enum("normal", "electric")
+var property: String = "normal"
+var transition_to: String = ""  # Used for transition
+var opp_transition_to: String = ""  # Used for grabs
+"#;
+    let result = reorder(input);
+    // Each variable should appear exactly once
+    assert_eq!(result.matches("var transition_to").count(), 1);
+    assert_eq!(result.matches("var opp_transition_to").count(), 1);
+}
+
+#[test]
+fn test_orphaned_export_category_preserved() {
+    // @export_category at end of file with no following variable should be preserved
+    let input = r#"extends Serializable
+
+class_name TriggerClearHitboxes
+
+@export_category("No Trigger Properties")
+"#;
+    let result = reorder(input);
+    assert!(result.contains("@export_category"), "Orphaned @export_category should be preserved");
 }

@@ -4,20 +4,22 @@
 //! 1. @tool, @icon, @static_unload
 //! 2. class_name
 //! 3. extends
-//! 4. ## doc comment
-//! 5. signals
-//! 6. enums
-//! 7. constants
-//! 8. static variables
-//! 9. @export variables
-//! 10. remaining regular variables
-//! 11. @onready variables
-//! 12. _static_init()
-//! 13. remaining static methods
-//! 14. virtual methods (_init, _enter_tree, _ready, _process, _physics_process, others)
-//! 15. overridden custom methods
-//! 16. remaining methods
-//! 17. subclasses
+//! 4. signals
+//! 5. enums
+//! 6. constants
+//! 7. static variables
+//! 8. @export variables
+//! 9. remaining regular variables
+//! 10. @onready variables
+//! 11. _static_init()
+//! 12. remaining static methods
+//! 13. virtual methods (_init, _enter_tree, _ready, _process, _physics_process, others)
+//! 14. overridden custom methods
+//! 15. remaining methods
+//! 16. subclasses
+//!
+//! Comments (including ## doc comments) are attached to the following declaration
+//! and move with it during reordering.
 
 use tree_sitter::Node;
 
@@ -41,34 +43,31 @@ pub enum MemberKind {
     // 03. extends
     Extends,
 
-    // 04. Doc comment (## comments at class level)
-    DocComment,
-
-    // 05. signals
+    // 04. signals
     Signal,
 
-    // 06. enums
+    // 05. enums
     Enum,
 
-    // 07. constants
+    // 06. constants
     Const,
 
-    // 08. static variables
+    // 07. static variables
     StaticVar,
 
-    // 09. @export variables
+    // 08. @export variables
     ExportVar,
 
-    // 10. regular variables
+    // 09. regular variables
     Var,
 
-    // 11. @onready variables
+    // 10. @onready variables
     OnreadyVar,
 
-    // 12. _static_init()
+    // 11. _static_init()
     StaticInit,
 
-    // 13. remaining static methods
+    // 12. remaining static methods
     StaticMethod,
 
     // 14. Virtual methods in specific order
@@ -132,6 +131,12 @@ pub struct Declaration {
 
     /// Original position for stable sorting
     pub original_index: usize,
+
+    /// Whether this declaration has a leading doc comment (##)
+    pub has_doc_comment: bool,
+
+    /// Whether this declaration has a leading section annotation (@export_category, @export_group, @export_subgroup)
+    pub has_section_annotation: bool,
 }
 
 /// Extract the annotation name from an annotation node.
@@ -185,6 +190,11 @@ fn is_export_annotation(name: &str) -> bool {
 /// Check if an annotation is standalone (not attached to a declaration).
 fn is_standalone_annotation(name: &str) -> bool {
     matches!(name, "tool" | "icon" | "static_unload")
+}
+
+/// Check if an annotation is a section marker (export_category, export_group, export_subgroup).
+fn is_section_annotation(name: &str) -> bool {
+    matches!(name, "export_category" | "export_group" | "export_subgroup")
 }
 
 /// Get annotations and modifiers from inside a node.
@@ -268,9 +278,46 @@ fn extract_declarations(node: Node<'_>, source: &str, skip_regions: &SkipRegions
                         kind,
                         text,
                         original_index,
+                        has_doc_comment: false,
+                        has_section_annotation: false,
                     });
                     processed_annotation_indices.insert(i);
                     original_index += 1;
+                } else if is_section_annotation(name) {
+                    // Check if this section annotation is followed by a variable
+                    // If not, it's orphaned and should be preserved as-is
+                    let mut has_following_var = false;
+                    for j in (i + 1)..children.len() {
+                        let next_child = children[j];
+                        if next_child.kind() == "variable_statement" {
+                            has_following_var = true;
+                            break;
+                        }
+                        // Stop if we hit another major declaration type
+                        if matches!(
+                            next_child.kind(),
+                            "function_definition"
+                                | "class_definition"
+                                | "signal_statement"
+                                | "enum_definition"
+                                | "const_statement"
+                        ) {
+                            break;
+                        }
+                    }
+                    if !has_following_var {
+                        // Orphaned section annotation - preserve it with the last variable kind
+                        let text = get_lines_text(source, child_start_line, child_end_line);
+                        declarations.push(Declaration {
+                            kind: MemberKind::Var,
+                            text,
+                            original_index,
+                            has_doc_comment: false,
+                            has_section_annotation: true,
+                        });
+                        processed_annotation_indices.insert(i);
+                        original_index += 1;
+                    }
                 }
             }
             i += 1;
@@ -334,14 +381,8 @@ fn extract_declarations(node: Node<'_>, source: &str, skip_regions: &SkipRegions
             // _init() is parsed as constructor_definition, not function_definition
             "constructor_definition" => Some(MemberKind::VirtualInit),
             "class_definition" => Some(MemberKind::InnerClass),
-            "comment" => {
-                let text = node_text(child, source).unwrap_or("");
-                if text.starts_with("##") {
-                    Some(MemberKind::DocComment)
-                } else {
-                    None
-                }
-            }
+            // Comments (including ## doc comments) are not standalone declarations.
+            // They are included with the following declaration they document.
             _ => None,
         };
 
@@ -349,6 +390,8 @@ fn extract_declarations(node: Node<'_>, source: &str, skip_regions: &SkipRegions
             // Include preceding comments and annotations (no blank line between)
             // This captures @export_category, @export_group, etc. that precede variables
             let mut start_line = child_start_line;
+            let mut has_doc_comment = false;
+            let mut has_section_annotation = false;
 
             // First, look at preceding AST children for annotations like @export_category
             // This handles multiline annotations correctly by using AST node boundaries
@@ -373,6 +416,13 @@ fn extract_declarations(node: Node<'_>, source: &str, skip_regions: &SkipRegions
                             let prev_end_line = prev_child.end_position().row + 1;
                             // Check if contiguous (no blank line between)
                             if prev_end_line + 1 >= start_line {
+                                // Check if it's a section annotation
+                                if name == "export_category"
+                                    || name == "export_group"
+                                    || name == "export_subgroup"
+                                {
+                                    has_section_annotation = true;
+                                }
                                 start_line = prev_child.start_position().row + 1;
                                 processed_annotation_indices.insert(prev_idx);
                                 continue;
@@ -380,16 +430,27 @@ fn extract_declarations(node: Node<'_>, source: &str, skip_regions: &SkipRegions
                         }
                     }
                 }
-                // Check for comments (but not doc comments)
+                // Check for comments (including ## doc comments)
+                // Comments immediately preceding a declaration are attached to it
+                // But NOT inline/trailing comments (those that start in the middle of a line)
                 else if prev_child.kind() == "comment" {
-                    let text = node_text(prev_child, source).unwrap_or("");
-                    if !text.starts_with("##") {
-                        let prev_end_line = prev_child.end_position().row + 1;
-                        // Check if contiguous (no blank line between)
-                        if prev_end_line + 1 >= start_line {
-                            start_line = prev_child.start_position().row + 1;
-                            continue;
+                    // Only consider comments that start at the beginning of a line (column 0)
+                    // This excludes inline comments like `var x = 1 # comment`
+                    if prev_child.start_position().column != 0 {
+                        break;
+                    }
+                    let prev_end_line = prev_child.end_position().row + 1;
+                    // Check if contiguous (no blank line between)
+                    if prev_end_line + 1 >= start_line {
+                        // Check if it's a doc comment
+                        if let Some(text) = node_text(prev_child, source) {
+                            if text.starts_with("##") {
+                                has_doc_comment = true;
+                            }
                         }
+                        start_line = prev_child.start_position().row + 1;
+                        processed_annotation_indices.insert(prev_idx);
+                        continue;
                     }
                 }
                 break;
@@ -401,6 +462,8 @@ fn extract_declarations(node: Node<'_>, source: &str, skip_regions: &SkipRegions
                 kind,
                 text,
                 original_index,
+                has_doc_comment,
+                has_section_annotation,
             });
             original_index += 1;
         }
@@ -421,25 +484,26 @@ fn sort_declarations(declarations: &mut [Declaration]) {
     });
 }
 
-/// Determine blank lines needed between two member kinds.
-fn blank_lines_between(prev: MemberKind, next: MemberKind) -> usize {
+/// Determine blank lines needed between two declarations.
+fn blank_lines_between(prev: &Declaration, next: &Declaration) -> usize {
     // Header items have no blank lines between them
-    if prev.is_header() && next.is_header() {
+    if prev.kind.is_header() && next.kind.is_header() {
         return 0;
     }
 
     // Two blank lines before/after functions and classes
-    if prev.is_function_like() || next.is_function_like() {
+    if prev.kind.is_function_like() || next.kind.is_function_like() {
         return 2;
     }
 
-    // Doc comments have 1 blank line after header but before other sections
-    if prev == MemberKind::DocComment || next == MemberKind::DocComment {
+    // If next declaration has a doc comment or section annotation, add a blank line before it
+    // This keeps doc-commented and @export_category/@export_group sections visually separated
+    if next.has_doc_comment || next.has_section_annotation {
         return 1;
     }
 
     // Same category: no blank line
-    if prev == next {
+    if prev.kind == next.kind {
         return 0;
     }
 
@@ -454,12 +518,12 @@ fn reconstruct_source(declarations: &[Declaration]) -> String {
     }
 
     let mut output = String::new();
-    let mut prev_kind: Option<MemberKind> = None;
+    let mut prev_decl: Option<&Declaration> = None;
 
     for decl in declarations {
         // Add appropriate blank lines between sections
-        if let Some(pk) = prev_kind {
-            let blanks = blank_lines_between(pk, decl.kind);
+        if let Some(prev) = prev_decl {
+            let blanks = blank_lines_between(prev, decl);
             for _ in 0..blanks {
                 output.push('\n');
             }
@@ -468,7 +532,7 @@ fn reconstruct_source(declarations: &[Declaration]) -> String {
         // Add the declaration text (already includes trailing newline)
         output.push_str(&decl.text);
 
-        prev_kind = Some(decl.kind);
+        prev_decl = Some(decl);
     }
 
     output
@@ -593,11 +657,11 @@ fn reorder_inner_class(class_text: &str, skip_regions: &SkipRegions, _depth: usi
     output.push_str(header);
     output.push('\n'); // Newline after header
 
-    let mut prev_kind: Option<MemberKind> = None;
+    let mut prev_decl: Option<&Declaration> = None;
 
     for decl in &declarations {
-        if let Some(pk) = prev_kind {
-            let blanks = blank_lines_between(pk, decl.kind);
+        if let Some(prev) = prev_decl {
+            let blanks = blank_lines_between(prev, decl);
             for _ in 0..blanks {
                 output.push('\n');
             }
@@ -606,7 +670,7 @@ fn reorder_inner_class(class_text: &str, skip_regions: &SkipRegions, _depth: usi
         // Preserve the declaration text as-is (already has proper indentation)
         output.push_str(&decl.text);
 
-        prev_kind = Some(decl.kind);
+        prev_decl = Some(decl);
     }
 
     Ok(output)
