@@ -163,8 +163,9 @@ fn format_stdin(
     // Step 3: Apply reordering if enabled
     let final_output = if options.reorder {
         let reordered = reorder_source(&formatted).map_err(|e| miette!("{}", e))?;
-        // Step 4: Check idempotency of reordering
+        // Step 4: Check reordering invariants
         if run_safety_checks {
+            verify_reorder_line_invariant("<stdin>", &formatted, &reordered)?;
             verify_reorder_idempotent("<stdin>", &reordered)?;
         }
         reordered
@@ -233,8 +234,13 @@ fn process_file(
     let final_output = if options.reorder {
         match reorder_source(&formatted) {
             Ok(reordered) => {
-                // Step 4: Check idempotency of reordering
+                // Step 4: Check reordering invariants
                 if run_safety_checks {
+                    if let Err(e) = verify_reorder_line_invariant(&filename, &formatted, &reordered)
+                    {
+                        eprintln!("Warning: skipping {} - {}", filename, e);
+                        return Ok(false);
+                    }
                     if let Err(e) = verify_reorder_idempotent(&filename, &reordered) {
                         eprintln!("Warning: skipping {} - {}", filename, e);
                         return Ok(false);
@@ -383,4 +389,54 @@ fn verify_reorder_idempotent(filename: &str, reordered: &str) -> Result<()> {
             filename
         ))
     }
+}
+
+fn verify_reorder_line_invariant(filename: &str, original: &str, reordered: &str) -> Result<()> {
+    use std::collections::HashMap;
+
+    // Count non-blank lines in original
+    let mut original_lines: HashMap<&str, usize> = HashMap::new();
+    for line in original.lines() {
+        if !line.trim().is_empty() {
+            *original_lines.entry(line).or_insert(0) += 1;
+        }
+    }
+
+    // Count non-blank lines in reordered
+    let mut reordered_lines: HashMap<&str, usize> = HashMap::new();
+    for line in reordered.lines() {
+        if !line.trim().is_empty() {
+            *reordered_lines.entry(line).or_insert(0) += 1;
+        }
+    }
+
+    // Check for lines that were added (in reordered but not in original)
+    for (line, count) in &reordered_lines {
+        let original_count = original_lines.get(line).copied().unwrap_or(0);
+        if *count > original_count {
+            return Err(miette!(
+                "Reordering added duplicate or new line in {}!\nLine appears {} time(s) in reordered but {} time(s) in original:\n{}",
+                filename,
+                count,
+                original_count,
+                line
+            ));
+        }
+    }
+
+    // Check for lines that were removed (in original but not in reordered)
+    for (line, count) in &original_lines {
+        let reordered_count = reordered_lines.get(line).copied().unwrap_or(0);
+        if reordered_count < *count {
+            return Err(miette!(
+                "Reordering removed line in {}!\nLine appears {} time(s) in original but {} time(s) in reordered:\n{}",
+                filename,
+                count,
+                reordered_count,
+                line
+            ));
+        }
+    }
+
+    Ok(())
 }

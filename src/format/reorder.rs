@@ -174,8 +174,15 @@ fn classify_virtual_method(name: &str) -> MemberKind {
         "_ready" => MemberKind::VirtualReady,
         "_process" => MemberKind::VirtualProcess,
         "_physics_process" => MemberKind::VirtualPhysicsProcess,
-        "_exit_tree" | "_input" | "_unhandled_input" | "_notification" | "_draw" | "_gui_input"
-        | "_unhandled_key_input" | "_shortcut_input" | "_get_configuration_warnings"
+        "_exit_tree"
+        | "_input"
+        | "_unhandled_input"
+        | "_notification"
+        | "_draw"
+        | "_gui_input"
+        | "_unhandled_key_input"
+        | "_shortcut_input"
+        | "_get_configuration_warnings"
         | "_get_configuration_warning" => MemberKind::VirtualOther,
         name if name.starts_with('_') => MemberKind::OverriddenCustomMethod,
         _ => MemberKind::Method,
@@ -242,7 +249,11 @@ fn get_lines_text(source: &str, start_line: usize, end_line: usize) -> String {
 }
 
 /// Extract declarations from a scope.
-fn extract_declarations(node: Node<'_>, source: &str, skip_regions: &SkipRegions) -> Vec<Declaration> {
+fn extract_declarations(
+    node: Node<'_>,
+    source: &str,
+    skip_regions: &SkipRegions,
+) -> Vec<Declaration> {
     let mut declarations = Vec::new();
     let mut cursor = node.walk();
     let children: Vec<_> = node.children(&mut cursor).collect();
@@ -307,12 +318,55 @@ fn extract_declarations(node: Node<'_>, source: &str, skip_regions: &SkipRegions
                     }
                     if !has_following_var {
                         // Orphaned section annotation - preserve it with the last variable kind
-                        let text = get_lines_text(source, child_start_line, child_end_line);
+                        // Also look for preceding comments to include with it
+                        let mut start_line = child_start_line;
+                        let mut has_doc_comment = false;
+
+                        // Look backwards for preceding comments
+                        let mut prev_idx = i;
+                        while prev_idx > 0 {
+                            prev_idx -= 1;
+                            let prev_child = children[prev_idx];
+
+                            // Skip if already processed
+                            if processed_annotation_indices.contains(&prev_idx) {
+                                break;
+                            }
+
+                            // Check for comments
+                            if prev_child.kind() == "comment" {
+                                // Only consider comments that start at the beginning of a line
+                                if prev_child.start_position().column != 0 {
+                                    break;
+                                }
+                                let prev_end_line = prev_child.end_position().row + 1;
+                                // Allow up to 1 blank line between comment and annotation
+                                let is_near = prev_end_line + 2 >= start_line;
+
+                                if is_near {
+                                    // Check if it's a doc comment
+                                    let is_contiguous = prev_end_line + 1 >= start_line;
+                                    if is_contiguous {
+                                        if let Some(text) = node_text(prev_child, source) {
+                                            if text.starts_with("##") {
+                                                has_doc_comment = true;
+                                            }
+                                        }
+                                    }
+                                    start_line = prev_child.start_position().row + 1;
+                                    processed_annotation_indices.insert(prev_idx);
+                                    continue;
+                                }
+                            }
+                            break;
+                        }
+
+                        let text = get_lines_text(source, start_line, child_end_line);
                         declarations.push(Declaration {
                             kind: MemberKind::Var,
                             text,
                             original_index,
-                            has_doc_comment: false,
+                            has_doc_comment,
                             has_section_annotation: true,
                         });
                         processed_annotation_indices.insert(i);
@@ -409,18 +463,15 @@ fn extract_declarations(node: Node<'_>, source: &str, skip_regions: &SkipRegions
                 if prev_child.kind() == "annotation" {
                     if let Some(name) = get_annotation_name(prev_child, source) {
                         // Check if it's an export-related annotation that should move with the variable
-                        // This includes: export_category, export_group, export_subgroup, export_enum,
-                        // export_flags, export_range, export_exp_easing, export_multiline, etc.
-                        // We include any export_ prefixed annotation that appears standalone
-                        if name.starts_with("export_") && !is_standalone_annotation(name) {
+                        // This includes: @export, @export_category, @export_group, @export_subgroup,
+                        // @export_enum, @export_flags, @export_range, @export_multiline, etc.
+                        let is_export_annotation = name == "export" || name.starts_with("export_");
+                        if is_export_annotation && !is_standalone_annotation(name) {
                             let prev_end_line = prev_child.end_position().row + 1;
                             // Check if contiguous (no blank line between)
                             if prev_end_line + 1 >= start_line {
                                 // Check if it's a section annotation
-                                if name == "export_category"
-                                    || name == "export_group"
-                                    || name == "export_subgroup"
-                                {
+                                if is_section_annotation(name) {
                                     has_section_annotation = true;
                                 }
                                 start_line = prev_child.start_position().row + 1;
@@ -440,12 +491,21 @@ fn extract_declarations(node: Node<'_>, source: &str, skip_regions: &SkipRegions
                         break;
                     }
                     let prev_end_line = prev_child.end_position().row + 1;
-                    // Check if contiguous (no blank line between)
-                    if prev_end_line + 1 >= start_line {
-                        // Check if it's a doc comment
-                        if let Some(text) = node_text(prev_child, source) {
-                            if text.starts_with("##") {
-                                has_doc_comment = true;
+                    // Include comments that precede a declaration, allowing:
+                    // - Up to 2 blank lines for functions/classes (for section headers)
+                    // - Up to 1 blank line for other declarations
+                    let is_contiguous = prev_end_line + 1 >= start_line;
+                    let is_near = prev_end_line + 2 >= start_line;
+                    let is_header_comment =
+                        kind.is_function_like() && prev_end_line + 3 >= start_line;
+
+                    if is_contiguous || is_near || is_header_comment {
+                        // Check if it's a doc comment (only if immediately preceding)
+                        if is_contiguous {
+                            if let Some(text) = node_text(prev_child, source) {
+                                if text.starts_with("##") {
+                                    has_doc_comment = true;
+                                }
                             }
                         }
                         start_line = prev_child.start_position().row + 1;
@@ -476,11 +536,9 @@ fn extract_declarations(node: Node<'_>, source: &str, skip_regions: &SkipRegions
 
 /// Sort declarations by MemberKind, preserving original order within same kind.
 fn sort_declarations(declarations: &mut [Declaration]) {
-    declarations.sort_by(|a, b| {
-        match a.kind.cmp(&b.kind) {
-            std::cmp::Ordering::Equal => a.original_index.cmp(&b.original_index),
-            other => other,
-        }
+    declarations.sort_by(|a, b| match a.kind.cmp(&b.kind) {
+        std::cmp::Ordering::Equal => a.original_index.cmp(&b.original_index),
+        other => other,
     });
 }
 
@@ -601,7 +659,11 @@ pub fn reorder_source(source: &str) -> Result<String, FormatError> {
 }
 
 /// Reorder the body of an inner class.
-fn reorder_inner_class(class_text: &str, skip_regions: &SkipRegions, _depth: usize) -> Result<String, FormatError> {
+fn reorder_inner_class(
+    class_text: &str,
+    skip_regions: &SkipRegions,
+    _depth: usize,
+) -> Result<String, FormatError> {
     let tree = parser::parse(class_text).map_err(FormatError::Parse)?;
     let root = tree.root_node();
 
@@ -767,7 +829,12 @@ var reverse_direction_frame: float
         fn print_node(node: tree_sitter::Node, source: &str, depth: usize) {
             let indent = "  ".repeat(depth);
             let text = &source[node.start_byte()..node.end_byte()];
-            let text_short = text.replace('\n', "\\n").replace('\t', "\\t").chars().take(80).collect::<String>();
+            let text_short = text
+                .replace('\n', "\\n")
+                .replace('\t', "\\t")
+                .chars()
+                .take(80)
+                .collect::<String>();
             println!(
                 "{}kind={:?} lines={}-{} text={:?}",
                 indent,

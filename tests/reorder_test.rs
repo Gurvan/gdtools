@@ -962,7 +962,10 @@ var x = 1
     // The var should still be after the func
     let func_pos = result.find("func foo").unwrap();
     let var_pos = result.find("var x").unwrap();
-    assert!(func_pos < var_pos, "With reorder disabled, order should be preserved");
+    assert!(
+        func_pos < var_pos,
+        "With reorder disabled, order should be preserved"
+    );
 }
 
 // ============================================================================
@@ -1047,7 +1050,11 @@ var frame: float
     let result = reorder(input);
     // Both @export_category lines should be preserved
     let matches: Vec<_> = result.match_indices("@export_category").collect();
-    assert_eq!(matches.len(), 2, "Both @export_category annotations should be preserved");
+    assert_eq!(
+        matches.len(),
+        2,
+        "Both @export_category annotations should be preserved"
+    );
     assert!(result.contains("var frame: float"));
 }
 
@@ -1126,8 +1133,16 @@ var b: String = ""  # comment b
 "#;
     let result = reorder(input);
     // Each variable should appear exactly once
-    assert_eq!(result.matches("var a").count(), 1, "var a should appear exactly once");
-    assert_eq!(result.matches("var b").count(), 1, "var b should appear exactly once");
+    assert_eq!(
+        result.matches("var a").count(),
+        1,
+        "var a should appear exactly once"
+    );
+    assert_eq!(
+        result.matches("var b").count(),
+        1,
+        "var b should appear exactly once"
+    );
     // Comments should be preserved
     assert!(result.contains("# comment a"));
     assert!(result.contains("# comment b"));
@@ -1163,5 +1178,8 @@ class_name TriggerClearHitboxes
 @export_category("No Trigger Properties")
 "#;
     let result = reorder(input);
-    assert!(result.contains("@export_category"), "Orphaned @export_category should be preserved");
+    assert!(
+        result.contains("@export_category"),
+        "Orphaned @export_category should be preserved"
+    );
 }
