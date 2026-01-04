@@ -236,7 +236,6 @@ fn extract_declarations(node: Node<'_>, source: &str, skip_regions: &SkipRegions
     let mut declarations = Vec::new();
     let mut cursor = node.walk();
     let children: Vec<_> = node.children(&mut cursor).collect();
-    let lines: Vec<&str> = source.lines().collect();
 
     let mut i = 0;
     let mut original_index = 0;
@@ -350,25 +349,50 @@ fn extract_declarations(node: Node<'_>, source: &str, skip_regions: &SkipRegions
             // Include preceding comments and annotations (no blank line between)
             // This captures @export_category, @export_group, etc. that precede variables
             let mut start_line = child_start_line;
-            while start_line > 1 {
-                let prev_line_idx = start_line - 2;
-                if prev_line_idx >= lines.len() {
+
+            // First, look at preceding AST children for annotations like @export_category
+            // This handles multiline annotations correctly by using AST node boundaries
+            let mut prev_idx = i;
+            while prev_idx > 0 {
+                prev_idx -= 1;
+                let prev_child = children[prev_idx];
+
+                // Skip if already processed as a standalone annotation
+                if processed_annotation_indices.contains(&prev_idx) {
                     break;
                 }
-                let prev_line = lines[prev_line_idx].trim();
-                // Include preceding comments (but not doc comments ##)
-                if prev_line.starts_with('#') && !prev_line.starts_with("##") {
-                    start_line -= 1;
+
+                // Check for annotation nodes
+                if prev_child.kind() == "annotation" {
+                    if let Some(name) = get_annotation_name(prev_child, source) {
+                        // Check if it's an export-related annotation that should move with the variable
+                        // This includes: export_category, export_group, export_subgroup, export_enum,
+                        // export_flags, export_range, export_exp_easing, export_multiline, etc.
+                        // We include any export_ prefixed annotation that appears standalone
+                        if name.starts_with("export_") && !is_standalone_annotation(name) {
+                            let prev_end_line = prev_child.end_position().row + 1;
+                            // Check if contiguous (no blank line between)
+                            if prev_end_line + 1 >= start_line {
+                                start_line = prev_child.start_position().row + 1;
+                                processed_annotation_indices.insert(prev_idx);
+                                continue;
+                            }
+                        }
+                    }
                 }
-                // Include preceding standalone annotations like @export_category, @export_group
-                else if prev_line.starts_with("@export_category")
-                    || prev_line.starts_with("@export_group")
-                    || prev_line.starts_with("@export_subgroup")
-                {
-                    start_line -= 1;
-                } else {
-                    break;
+                // Check for comments (but not doc comments)
+                else if prev_child.kind() == "comment" {
+                    let text = node_text(prev_child, source).unwrap_or("");
+                    if !text.starts_with("##") {
+                        let prev_end_line = prev_child.end_position().row + 1;
+                        // Check if contiguous (no blank line between)
+                        if prev_end_line + 1 >= start_line {
+                            start_line = prev_child.start_position().row + 1;
+                            continue;
+                        }
+                    }
                 }
+                break;
             }
 
             let text = get_lines_text(source, start_line, child_end_line);
@@ -659,5 +683,42 @@ mod tests {
         assert!(is_standalone_annotation("static_unload"));
         assert!(!is_standalone_annotation("export"));
         assert!(!is_standalone_annotation("onready"));
+    }
+
+    #[test]
+    fn test_debug_multiline_export_category() {
+        let source = r#"extends ActionProperties
+
+class_name TurnProperties
+
+@export_category("Turn Properties")
+@export_category("tooltip:Number of frames for slow turn to reverse the fighter. " +
+	"On smash turn, value is ignored as fighter reverses instantly.")
+var reverse_direction_frame: float
+"#;
+        let tree = crate::parser::parse(source).unwrap();
+        let root = tree.root_node();
+
+        println!("=== AST structure for multiline export_category ===");
+        fn print_node(node: tree_sitter::Node, source: &str, depth: usize) {
+            let indent = "  ".repeat(depth);
+            let text = &source[node.start_byte()..node.end_byte()];
+            let text_short = text.replace('\n', "\\n").replace('\t', "\\t").chars().take(80).collect::<String>();
+            println!(
+                "{}kind={:?} lines={}-{} text={:?}",
+                indent,
+                node.kind(),
+                node.start_position().row + 1,
+                node.end_position().row + 1,
+                text_short
+            );
+
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                print_node(child, source, depth + 1);
+            }
+        }
+        print_node(root, source, 0);
+        println!("==================");
     }
 }

@@ -964,3 +964,128 @@ var x = 1
     let x_pos = result.find("var x").unwrap();
     assert!(foo_pos < x_pos, "Content in fmt:off should preserve order");
 }
+
+// ============================================================================
+// Phase 9: Multiline Annotation Tests
+// ============================================================================
+
+#[test]
+fn test_multiline_export_category_preserved() {
+    // @export_category that spans multiple lines should be preserved
+    let input = r#"extends Node
+
+@export_category("tooltip:Number of frames for slow turn. " +
+	"On smash turn, value is ignored.")
+var reverse_direction_frame: float
+"#;
+    let result = reorder(input);
+    assert!(result.contains("@export_category"));
+    assert!(result.contains("var reverse_direction_frame"));
+    // The annotation should appear before the variable
+    let cat_pos = result.find("@export_category").unwrap();
+    let var_pos = result.find("var reverse_direction_frame").unwrap();
+    assert!(cat_pos < var_pos);
+}
+
+#[test]
+fn test_multiline_export_category_moves_with_variable() {
+    // Multiline @export_category should move with the variable when reordering
+    let input = r#"extends Node
+
+
+func foo():
+	pass
+
+
+@export_category("tooltip:Number of frames for slow turn. " +
+	"On smash turn, value is ignored.")
+var reverse_direction_frame: float
+"#;
+    let result = reorder(input);
+    // Variable should come before function
+    let var_pos = result.find("var reverse_direction_frame").unwrap();
+    let func_pos = result.find("func foo").unwrap();
+    assert!(var_pos < func_pos);
+    // Annotation should still be before variable
+    let cat_pos = result.find("@export_category").unwrap();
+    assert!(cat_pos < var_pos);
+}
+
+#[test]
+fn test_multiple_annotations_with_multiline() {
+    // Multiple annotations where one is multiline
+    let input = r#"extends Node
+
+@export_category("Movement")
+@export_category("tooltip:Number of frames. " +
+	"Value is ignored on smash.")
+var frame: float
+"#;
+    let result = reorder(input);
+    // Both @export_category lines should be preserved
+    let matches: Vec<_> = result.match_indices("@export_category").collect();
+    assert_eq!(matches.len(), 2, "Both @export_category annotations should be preserved");
+    assert!(result.contains("var frame: float"));
+}
+
+#[test]
+fn test_export_enum_preserved() {
+    // @export_enum on its own line should be preserved with the following variable
+    let input = r#"extends Node
+
+@export_enum("head", "waist", "feet")
+var body_type: String = "waist"
+"#;
+    let result = reorder(input);
+    assert!(result.contains("@export_enum"));
+    assert!(result.contains("var body_type"));
+    let enum_pos = result.find("@export_enum").unwrap();
+    let var_pos = result.find("var body_type").unwrap();
+    assert!(enum_pos < var_pos);
+}
+
+#[test]
+fn test_export_enum_moves_with_variable() {
+    let input = r#"extends Node
+
+
+func foo():
+	pass
+
+
+@export_enum("head", "waist", "feet")
+var body_type: String = "waist"
+"#;
+    let result = reorder(input);
+    // Variable should come before function
+    let var_pos = result.find("var body_type").unwrap();
+    let func_pos = result.find("func foo").unwrap();
+    assert!(var_pos < func_pos);
+    // Annotation should still be before variable
+    let enum_pos = result.find("@export_enum").unwrap();
+    assert!(enum_pos < var_pos);
+}
+
+#[test]
+fn test_export_flags_preserved() {
+    let input = r#"extends Node
+
+@export_flags("Fire", "Water", "Earth", "Wind")
+var spell_elements: int = 0
+"#;
+    let result = reorder(input);
+    assert!(result.contains("@export_flags"));
+    assert!(result.contains("var spell_elements"));
+}
+
+#[test]
+fn test_export_range_preserved() {
+    let input = r#"extends Node
+
+@export_range(0, 100, 1)
+var health: int = 100
+"#;
+    let result = reorder(input);
+    assert!(result.contains("@export_range"));
+    assert!(result.contains("var health"));
+}
