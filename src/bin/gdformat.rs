@@ -45,13 +45,9 @@ struct Cli {
     #[arg(long)]
     config: Option<PathBuf>,
 
-    /// Verify AST equivalence after formatting (catch formatter bugs)
+    /// Skip safety checks (AST equivalence and idempotence) - not recommended
     #[arg(long)]
-    check_ast: bool,
-
-    /// Verify formatting is idempotent (formatting twice gives same result)
-    #[arg(long)]
-    check_idempotent: bool,
+    unsafe_skip_checks: bool,
 }
 
 fn main() -> ExitCode {
@@ -76,12 +72,12 @@ fn run() -> Result<bool> {
     // Build format options from CLI or config
     let options = build_options(&cli)?;
 
-    // --check-ast and --check-idempotent imply --check (never write files when verifying)
-    let check = cli.check || cli.check_ast || cli.check_idempotent;
+    let check = cli.check;
+    let run_safety_checks = !cli.unsafe_skip_checks;
 
     // Handle stdin mode
     if cli.stdin {
-        return format_stdin(&options, check, cli.diff, cli.check_ast, cli.check_idempotent);
+        return format_stdin(&options, check, cli.diff, run_safety_checks);
     }
 
     // Load config for exclude patterns
@@ -91,11 +87,11 @@ fn run() -> Result<bool> {
 
     for path in &cli.paths {
         if path.is_file() {
-            if process_file(path, &options, check, cli.diff, cli.stdout, cli.check_ast, cli.check_idempotent, &config.exclude)? {
+            if process_file(path, &options, check, cli.diff, cli.stdout, run_safety_checks, &config.exclude)? {
                 any_changes = true;
             }
         } else if path.is_dir() {
-            if process_directory(path, &options, check, cli.diff, cli.stdout, cli.check_ast, cli.check_idempotent, &config.exclude)? {
+            if process_directory(path, &options, check, cli.diff, cli.stdout, run_safety_checks, &config.exclude)? {
                 any_changes = true;
             }
         }
@@ -118,7 +114,7 @@ fn build_options(cli: &Cli) -> Result<FormatOptions> {
     })
 }
 
-fn format_stdin(options: &FormatOptions, check: bool, diff: bool, check_ast: bool, check_idempotent: bool) -> Result<bool> {
+fn format_stdin(options: &FormatOptions, check: bool, diff: bool, run_safety_checks: bool) -> Result<bool> {
     let mut source = String::new();
     io::stdin()
         .read_to_string(&mut source)
@@ -126,11 +122,9 @@ fn format_stdin(options: &FormatOptions, check: bool, diff: bool, check_ast: boo
 
     let formatted = run_formatter(&source, options).map_err(|e| miette!("{}", e))?;
 
-    if check_ast {
+    // Run safety checks - for stdin we fail hard since we can't skip
+    if run_safety_checks {
         verify_ast_equivalence("<stdin>", &source, &formatted)?;
-    }
-
-    if check_idempotent {
         verify_idempotent("<stdin>", &formatted, options)?;
     }
 
@@ -156,8 +150,7 @@ fn process_file(
     check: bool,
     diff: bool,
     stdout: bool,
-    check_ast: bool,
-    check_idempotent: bool,
+    run_safety_checks: bool,
     excludes: &[String],
 ) -> Result<bool> {
     // Check exclusions
@@ -178,12 +171,17 @@ fn process_file(
         }
     };
 
-    if check_ast {
-        verify_ast_equivalence(&path.display().to_string(), &source, &formatted)?;
-    }
-
-    if check_idempotent {
-        verify_idempotent(&path.display().to_string(), &formatted, options)?;
+    // Run safety checks by default - skip file if they fail
+    if run_safety_checks {
+        let filename = path.display().to_string();
+        if let Err(e) = verify_ast_equivalence(&filename, &source, &formatted) {
+            eprintln!("Warning: skipping {} - {}", filename, e);
+            return Ok(false);
+        }
+        if let Err(e) = verify_idempotent(&filename, &formatted, options) {
+            eprintln!("Warning: skipping {} - {}", filename, e);
+            return Ok(false);
+        }
     }
 
     let changed = source != formatted;
@@ -224,8 +222,7 @@ fn process_directory(
     check: bool,
     diff: bool,
     stdout: bool,
-    check_ast: bool,
-    check_idempotent: bool,
+    run_safety_checks: bool,
     excludes: &[String],
 ) -> Result<bool> {
     let mut any_changes = false;
@@ -237,7 +234,7 @@ fn process_directory(
         let file_path = entry.path();
 
         if file_path.extension().map(|e| e == "gd").unwrap_or(false) {
-            if process_file(&file_path.to_path_buf(), options, check, diff, stdout, check_ast, check_idempotent, excludes)? {
+            if process_file(&file_path.to_path_buf(), options, check, diff, stdout, run_safety_checks, excludes)? {
                 any_changes = true;
             }
         }
