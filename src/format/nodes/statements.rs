@@ -60,19 +60,22 @@ pub fn format_class_name_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) 
 /// Format pass statement.
 pub fn format_pass_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     let line = node.start_position().row + 1;
-    ctx.output.push_mapped(format!("{}pass", ctx.indent_str()), line);
+    ctx.output
+        .push_mapped(format!("{}pass", ctx.indent_str()), line);
 }
 
 /// Format break statement.
 pub fn format_break_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     let line = node.start_position().row + 1;
-    ctx.output.push_mapped(format!("{}break", ctx.indent_str()), line);
+    ctx.output
+        .push_mapped(format!("{}break", ctx.indent_str()), line);
 }
 
 /// Format continue statement.
 pub fn format_continue_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     let line = node.start_position().row + 1;
-    ctx.output.push_mapped(format!("{}continue", ctx.indent_str()), line);
+    ctx.output
+        .push_mapped(format!("{}continue", ctx.indent_str()), line);
 }
 
 /// Format return statement: `return` or `return value`
@@ -89,7 +92,8 @@ pub fn format_return_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
 
     if let Some(expr_node) = expr {
         let expr_text = format_expression(*expr_node, ctx);
-        ctx.output.push_mapped(format!("{}return {}", indent, expr_text), line);
+        ctx.output
+            .push_mapped(format!("{}return {}", indent, expr_text), line);
     } else {
         ctx.output.push_mapped(format!("{}return", indent), line);
     }
@@ -102,7 +106,8 @@ pub fn format_expression_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) 
 
     if let Some(expr) = node.child(0) {
         let expr_text = format_expression(expr, ctx);
-        ctx.output.push_mapped(format!("{}{}", indent, expr_text), line);
+        ctx.output
+            .push_mapped(format!("{}{}", indent, expr_text), line);
     }
 }
 

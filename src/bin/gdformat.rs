@@ -7,11 +7,17 @@ use ignore::WalkBuilder;
 use miette::{miette, IntoDiagnostic, Result};
 
 use gdtools::config::load_config;
-use gdtools::format::{compare_ast_with_source, run_formatter, AstCheckResult, FormatOptions, IndentStyle};
+use gdtools::format::{
+    compare_ast_with_source, run_formatter, AstCheckResult, FormatOptions, IndentStyle,
+};
 use gdtools::parser;
 
 #[derive(Parser)]
-#[command(name = "gdformat", version, about = "A fast GDScript formatter for Godot 4.x")]
+#[command(
+    name = "gdformat",
+    version,
+    about = "A fast GDScript formatter for Godot 4.x"
+)]
 struct Cli {
     /// Files or directories to format
     #[arg(default_value = ".")]
@@ -87,13 +93,29 @@ fn run() -> Result<bool> {
 
     for path in &cli.paths {
         if path.is_file() {
-            if process_file(path, &options, check, cli.diff, cli.stdout, run_safety_checks, &config.exclude)? {
+            if process_file(
+                path,
+                &options,
+                check,
+                cli.diff,
+                cli.stdout,
+                run_safety_checks,
+                &config.exclude,
+            )? {
                 any_changes = true;
             }
-        } else if path.is_dir() {
-            if process_directory(path, &options, check, cli.diff, cli.stdout, run_safety_checks, &config.exclude)? {
-                any_changes = true;
-            }
+        } else if path.is_dir()
+            && process_directory(
+                path,
+                &options,
+                check,
+                cli.diff,
+                cli.stdout,
+                run_safety_checks,
+                &config.exclude,
+            )?
+        {
+            any_changes = true;
         }
     }
 
@@ -114,11 +136,14 @@ fn build_options(cli: &Cli) -> Result<FormatOptions> {
     })
 }
 
-fn format_stdin(options: &FormatOptions, check: bool, diff: bool, run_safety_checks: bool) -> Result<bool> {
+fn format_stdin(
+    options: &FormatOptions,
+    check: bool,
+    diff: bool,
+    run_safety_checks: bool,
+) -> Result<bool> {
     let mut source = String::new();
-    io::stdin()
-        .read_to_string(&mut source)
-        .into_diagnostic()?;
+    io::stdin().read_to_string(&mut source).into_diagnostic()?;
 
     let formatted = run_formatter(&source, options).map_err(|e| miette!("{}", e))?;
 
@@ -233,10 +258,18 @@ fn process_directory(
         let entry = entry.into_diagnostic()?;
         let file_path = entry.path();
 
-        if file_path.extension().map(|e| e == "gd").unwrap_or(false) {
-            if process_file(&file_path.to_path_buf(), options, check, diff, stdout, run_safety_checks, excludes)? {
-                any_changes = true;
-            }
+        if file_path.extension().map(|e| e == "gd").unwrap_or(false)
+            && process_file(
+                &file_path.to_path_buf(),
+                options,
+                check,
+                diff,
+                stdout,
+                run_safety_checks,
+                excludes,
+            )?
+        {
+            any_changes = true;
         }
     }
 

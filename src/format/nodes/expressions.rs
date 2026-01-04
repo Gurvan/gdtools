@@ -72,7 +72,6 @@ pub fn format_expression(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
     }
 }
 
-
 /// Format binary operation: `a + b`, `a * b`, `a not in b`, etc.
 fn format_binary_operation(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
     // Try field names first
@@ -92,20 +91,14 @@ fn format_binary_operation(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
     let children: Vec<_> = node.children(&mut cursor).collect();
 
     // Handle "not in" operator: 4 children (left, "not", "in", right)
-    if children.len() == 4
-        && children[1].kind() == "not"
-        && children[2].kind() == "in"
-    {
+    if children.len() == 4 && children[1].kind() == "not" && children[2].kind() == "in" {
         let left_text = format_expression(children[0], ctx);
         let right_text = format_expression(children[3], ctx);
         return format!("{} not in {}", left_text, right_text);
     }
 
     // Handle "is not" operator: 4 children (left, "is", "not", right)
-    if children.len() == 4
-        && children[1].kind() == "is"
-        && children[2].kind() == "not"
-    {
+    if children.len() == 4 && children[1].kind() == "is" && children[2].kind() == "not" {
         let left_text = format_expression(children[0], ctx);
         let right_text = format_expression(children[3], ctx);
         return format!("{} is not {}", left_text, right_text);
@@ -229,7 +222,9 @@ fn format_call(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
         .find(|c| !matches!(c.kind(), "(" | ")" | ","));
 
     // Find the arguments (look for argument_list or just collect args)
-    let args_node = children.iter().find(|c| c.kind() == "argument_list" || c.kind() == "arguments");
+    let args_node = children
+        .iter()
+        .find(|c| c.kind() == "argument_list" || c.kind() == "arguments");
 
     if let Some(func) = func_node {
         let func_text = format_expression(*func, ctx);
@@ -348,7 +343,10 @@ fn format_array(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
         let single_indent = ctx.options.indent_style.as_str();
         let inner_indent = format!("{}{}", indent, single_indent);
 
-        let elements: Vec<String> = children.iter().map(|c| format_expression(*c, ctx)).collect();
+        let elements: Vec<String> = children
+            .iter()
+            .map(|c| format_expression(*c, ctx))
+            .collect();
         format!(
             "[\n{}{},\n{}]",
             inner_indent,
@@ -357,7 +355,10 @@ fn format_array(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
         )
     } else {
         // Single-line format without trailing comma
-        let elements: Vec<String> = children.iter().map(|c| format_expression(*c, ctx)).collect();
+        let elements: Vec<String> = children
+            .iter()
+            .map(|c| format_expression(*c, ctx))
+            .collect();
         format!("[{}]", elements.join(", "))
     }
 }

@@ -46,12 +46,7 @@ impl Rule for UnnecessaryPassRule {
                     let severity = ctx
                         .config()
                         .get_rule_severity(self.meta.id, self.meta.default_severity);
-                    ctx.report_node(
-                        node,
-                        self.meta.id,
-                        severity,
-                        "Unnecessary pass statement",
-                    );
+                    ctx.report_node(node, self.meta.id, severity, "Unnecessary pass statement");
                 }
             }
         }

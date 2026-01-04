@@ -38,22 +38,37 @@ impl MemberKind {
         let node_text = |n: Node<'_>| n.utf8_text(source).unwrap_or("");
 
         match node.kind() {
-            "annotation" => {
-                match get_annotation_name(node, source) {
-                    Some("tool") => Some(MemberKind::Tool),
-                    Some("export" | "export_category" | "export_group" | "export_subgroup"
-                         | "export_color_no_alpha" | "export_dir" | "export_enum"
-                         | "export_exp_easing" | "export_file" | "export_flags"
-                         | "export_flags_2d_navigation" | "export_flags_2d_physics"
-                         | "export_flags_2d_render" | "export_flags_3d_navigation"
-                         | "export_flags_3d_physics" | "export_flags_3d_render"
-                         | "export_global_dir" | "export_global_file" | "export_multiline"
-                         | "export_node_path" | "export_placeholder" | "export_range"
-                         | "export_storage" | "export_custom") => Some(MemberKind::ExportVar),
-                    Some("onready") => Some(MemberKind::OnreadyVar),
-                    _ => None,
-                }
-            }
+            "annotation" => match get_annotation_name(node, source) {
+                Some("tool") => Some(MemberKind::Tool),
+                Some(
+                    "export"
+                    | "export_category"
+                    | "export_group"
+                    | "export_subgroup"
+                    | "export_color_no_alpha"
+                    | "export_dir"
+                    | "export_enum"
+                    | "export_exp_easing"
+                    | "export_file"
+                    | "export_flags"
+                    | "export_flags_2d_navigation"
+                    | "export_flags_2d_physics"
+                    | "export_flags_2d_render"
+                    | "export_flags_3d_navigation"
+                    | "export_flags_3d_physics"
+                    | "export_flags_3d_render"
+                    | "export_global_dir"
+                    | "export_global_file"
+                    | "export_multiline"
+                    | "export_node_path"
+                    | "export_placeholder"
+                    | "export_range"
+                    | "export_storage"
+                    | "export_custom",
+                ) => Some(MemberKind::ExportVar),
+                Some("onready") => Some(MemberKind::OnreadyVar),
+                _ => None,
+            },
             "class_name_statement" => Some(MemberKind::ClassName),
             "extends_statement" => Some(MemberKind::Extends),
             "signal_statement" => Some(MemberKind::Signal),
@@ -64,15 +79,32 @@ impl MemberKind {
                     if let Some(prev) = find_previous_sibling(parent, node) {
                         if prev.kind() == "annotation" {
                             match get_annotation_name(prev, source) {
-                                Some("export" | "export_category" | "export_group" | "export_subgroup"
-                                     | "export_color_no_alpha" | "export_dir" | "export_enum"
-                                     | "export_exp_easing" | "export_file" | "export_flags"
-                                     | "export_flags_2d_navigation" | "export_flags_2d_physics"
-                                     | "export_flags_2d_render" | "export_flags_3d_navigation"
-                                     | "export_flags_3d_physics" | "export_flags_3d_render"
-                                     | "export_global_dir" | "export_global_file" | "export_multiline"
-                                     | "export_node_path" | "export_placeholder" | "export_range"
-                                     | "export_storage" | "export_custom") => {
+                                Some(
+                                    "export"
+                                    | "export_category"
+                                    | "export_group"
+                                    | "export_subgroup"
+                                    | "export_color_no_alpha"
+                                    | "export_dir"
+                                    | "export_enum"
+                                    | "export_exp_easing"
+                                    | "export_file"
+                                    | "export_flags"
+                                    | "export_flags_2d_navigation"
+                                    | "export_flags_2d_physics"
+                                    | "export_flags_2d_render"
+                                    | "export_flags_3d_navigation"
+                                    | "export_flags_3d_physics"
+                                    | "export_flags_3d_render"
+                                    | "export_global_dir"
+                                    | "export_global_file"
+                                    | "export_multiline"
+                                    | "export_node_path"
+                                    | "export_placeholder"
+                                    | "export_range"
+                                    | "export_storage"
+                                    | "export_custom",
+                                ) => {
                                     return Some(MemberKind::ExportVar);
                                 }
                                 Some("onready") => return Some(MemberKind::OnreadyVar),

@@ -43,7 +43,9 @@ impl SkipRegions {
 
     /// Check if a line (1-indexed) is in a skip region.
     pub fn is_skipped(&self, line: usize) -> bool {
-        self.ranges.iter().any(|(start, end)| line >= *start && line <= *end)
+        self.ranges
+            .iter()
+            .any(|(start, end)| line >= *start && line <= *end)
     }
 
     /// Check if empty (no skip regions).

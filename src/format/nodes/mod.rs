@@ -65,7 +65,11 @@ pub fn format_node(node: Node<'_>, ctx: &mut FormatContext<'_>) {
 /// the comment (immediately before the next statement), not the total blanks in the gap.
 /// This ensures blank lines used to separate a comment from preceding code don't
 /// also get counted toward separating from following code.
-fn count_source_blank_lines(ctx: &FormatContext<'_>, prev_end_line: usize, next_start_line: usize) -> usize {
+fn count_source_blank_lines(
+    ctx: &FormatContext<'_>,
+    prev_end_line: usize,
+    next_start_line: usize,
+) -> usize {
     if next_start_line <= prev_end_line + 1 {
         return 0;
     }
@@ -124,9 +128,8 @@ fn blank_lines_between(prev: &str, next: &str, is_top_level: bool) -> usize {
     }
 
     // Functions and classes get 2 blank lines at top level, 1 within classes
-    let is_function_or_class = |kind: &str| {
-        matches!(kind, "function_definition" | "class_definition")
-    };
+    let is_function_or_class =
+        |kind: &str| matches!(kind, "function_definition" | "class_definition");
 
     // If either is a function or class definition, use 2 blank lines at top level
     if is_function_or_class(prev) || is_function_or_class(next) {

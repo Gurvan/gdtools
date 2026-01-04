@@ -47,8 +47,11 @@ pub fn format_if_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
         ctx.indent();
         for child in &children {
             let kind = child.kind();
-            if kind != "if" && kind != "elif_clause" && kind != "else_clause"
-                && !is_condition_node(kind) && kind != ":"
+            if kind != "if"
+                && kind != "elif_clause"
+                && kind != "else_clause"
+                && !is_condition_node(kind)
+                && kind != ":"
             {
                 super::format_node(*child, ctx);
             }
@@ -68,8 +71,17 @@ pub fn format_if_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
 }
 
 fn is_condition_node(kind: &str) -> bool {
-    matches!(kind, "binary_operator" | "comparison_operator" | "boolean_operator"
-        | "identifier" | "true" | "false" | "call" | "parenthesized_expression")
+    matches!(
+        kind,
+        "binary_operator"
+            | "comparison_operator"
+            | "boolean_operator"
+            | "identifier"
+            | "true"
+            | "false"
+            | "call"
+            | "parenthesized_expression"
+    )
 }
 
 /// Format elif clause.

@@ -28,7 +28,10 @@ impl<'a> LintContext<'a> {
     }
 
     pub fn report(&mut self, diagnostic: Diagnostic) {
-        if !self.suppressions.is_suppressed(&diagnostic.rule_id, diagnostic.line) {
+        if !self
+            .suppressions
+            .is_suppressed(&diagnostic.rule_id, diagnostic.line)
+        {
             let diag = diagnostic.with_file(self.file_path);
             self.diagnostics.push(diag);
         }

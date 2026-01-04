@@ -26,28 +26,55 @@ fn has_rule_violation(source: &str, rule_id: &str) -> bool {
 
 #[test]
 fn test_function_name_snake_case() {
-    assert!(!has_rule_violation("func my_function():\n    pass", "function-name"));
-    assert!(has_rule_violation("func MyFunction():\n    pass", "function-name"));
-    assert!(has_rule_violation("func myFunction():\n    pass", "function-name"));
+    assert!(!has_rule_violation(
+        "func my_function():\n    pass",
+        "function-name"
+    ));
+    assert!(has_rule_violation(
+        "func MyFunction():\n    pass",
+        "function-name"
+    ));
+    assert!(has_rule_violation(
+        "func myFunction():\n    pass",
+        "function-name"
+    ));
 }
 
 #[test]
 fn test_function_name_private() {
-    assert!(!has_rule_violation("func _private_func():\n    pass", "function-name"));
-    assert!(has_rule_violation("func _PrivateFunc():\n    pass", "function-name"));
+    assert!(!has_rule_violation(
+        "func _private_func():\n    pass",
+        "function-name"
+    ));
+    assert!(has_rule_violation(
+        "func _PrivateFunc():\n    pass",
+        "function-name"
+    ));
 }
 
 #[test]
 fn test_function_name_signal_handler() {
     // Signal handlers like _on_Button_pressed should be valid
-    assert!(!has_rule_violation("func _on_Button_pressed():\n    pass", "function-name"));
-    assert!(!has_rule_violation("func _on_Timer_timeout():\n    pass", "function-name"));
+    assert!(!has_rule_violation(
+        "func _on_Button_pressed():\n    pass",
+        "function-name"
+    ));
+    assert!(!has_rule_violation(
+        "func _on_Timer_timeout():\n    pass",
+        "function-name"
+    ));
 }
 
 #[test]
 fn test_class_name_pascal_case() {
-    assert!(!has_rule_violation("class MyClass:\n    pass", "class-name"));
-    assert!(has_rule_violation("class my_class:\n    pass", "class-name"));
+    assert!(!has_rule_violation(
+        "class MyClass:\n    pass",
+        "class-name"
+    ));
+    assert!(has_rule_violation(
+        "class my_class:\n    pass",
+        "class-name"
+    ));
     assert!(has_rule_violation("class myClass:\n    pass", "class-name"));
 }
 
@@ -61,7 +88,10 @@ fn test_signal_name_snake_case() {
 
 #[test]
 fn test_constant_name_upper_snake() {
-    assert!(!has_rule_violation("const MAX_VALUE = 100", "constant-name"));
+    assert!(!has_rule_violation(
+        "const MAX_VALUE = 100",
+        "constant-name"
+    ));
     assert!(!has_rule_violation("const SPEED = 5.0", "constant-name"));
     assert!(has_rule_violation("const maxValue = 100", "constant-name"));
     assert!(has_rule_violation("const max_value = 100", "constant-name"));
@@ -71,7 +101,10 @@ fn test_constant_name_upper_snake() {
 fn test_class_variable_name_snake_case() {
     // Class-scope variables should be snake_case
     assert!(!has_rule_violation("var my_var = 0", "class-variable-name"));
-    assert!(!has_rule_violation("var _private_var = 0", "class-variable-name"));
+    assert!(!has_rule_violation(
+        "var _private_var = 0",
+        "class-variable-name"
+    ));
     assert!(has_rule_violation("var MyVar = 0", "class-variable-name"));
     assert!(has_rule_violation("var myVar = 0", "class-variable-name"));
 }
@@ -79,27 +112,48 @@ fn test_class_variable_name_snake_case() {
 #[test]
 fn test_function_variable_name_snake_case() {
     // Function-scope variables should be snake_case
-    assert!(!has_rule_violation("func f():\n    var my_var = 0", "function-variable-name"));
-    assert!(has_rule_violation("func f():\n    var MyVar = 0", "function-variable-name"));
+    assert!(!has_rule_violation(
+        "func f():\n    var my_var = 0",
+        "function-variable-name"
+    ));
+    assert!(has_rule_violation(
+        "func f():\n    var MyVar = 0",
+        "function-variable-name"
+    ));
 }
 
 #[test]
 fn test_class_load_variable_name() {
     // Class load/preload variables should be PascalCase or snake_case
-    assert!(!has_rule_violation("var MyScene = load(\"res://a.tscn\")", "class-load-variable-name"));
-    assert!(!has_rule_violation("var my_scene = load(\"res://a.tscn\")", "class-load-variable-name"));
+    assert!(!has_rule_violation(
+        "var MyScene = load(\"res://a.tscn\")",
+        "class-load-variable-name"
+    ));
+    assert!(!has_rule_violation(
+        "var my_scene = load(\"res://a.tscn\")",
+        "class-load-variable-name"
+    ));
 }
 
 #[test]
 fn test_function_preload_variable_name() {
     // Function-scope preload variables should be PascalCase
-    assert!(!has_rule_violation("func f():\n    var MyScene = preload(\"res://a.tscn\")", "function-preload-variable-name"));
-    assert!(has_rule_violation("func f():\n    var my_scene = preload(\"res://a.tscn\")", "function-preload-variable-name"));
+    assert!(!has_rule_violation(
+        "func f():\n    var MyScene = preload(\"res://a.tscn\")",
+        "function-preload-variable-name"
+    ));
+    assert!(has_rule_violation(
+        "func f():\n    var my_scene = preload(\"res://a.tscn\")",
+        "function-preload-variable-name"
+    ));
 }
 
 #[test]
 fn test_enum_name_pascal_case() {
-    assert!(!has_rule_violation("enum State { IDLE, RUNNING }", "enum-name"));
+    assert!(!has_rule_violation(
+        "enum State { IDLE, RUNNING }",
+        "enum-name"
+    ));
     assert!(!has_rule_violation("enum MyEnum { A, B }", "enum-name"));
     // MYENUM is valid PascalCase (starts with uppercase, followed by alphanumeric)
     assert!(!has_rule_violation("enum MYENUM { A, B }", "enum-name"));
@@ -109,38 +163,80 @@ fn test_enum_name_pascal_case() {
 
 #[test]
 fn test_enum_element_name_upper_snake() {
-    assert!(!has_rule_violation("enum State { IDLE, RUNNING }", "enum-element-name"));
-    assert!(!has_rule_violation("enum E { MAX_VALUE }", "enum-element-name"));
-    assert!(has_rule_violation("enum State { idle, running }", "enum-element-name"));
-    assert!(has_rule_violation("enum State { Idle, Running }", "enum-element-name"));
+    assert!(!has_rule_violation(
+        "enum State { IDLE, RUNNING }",
+        "enum-element-name"
+    ));
+    assert!(!has_rule_violation(
+        "enum E { MAX_VALUE }",
+        "enum-element-name"
+    ));
+    assert!(has_rule_violation(
+        "enum State { idle, running }",
+        "enum-element-name"
+    ));
+    assert!(has_rule_violation(
+        "enum State { Idle, Running }",
+        "enum-element-name"
+    ));
 }
 
 #[test]
 fn test_function_argument_name() {
-    assert!(!has_rule_violation("func f(my_arg):\n    pass", "function-argument-name"));
-    assert!(!has_rule_violation("func f(_unused):\n    pass", "function-argument-name"));
-    assert!(has_rule_violation("func f(MyArg):\n    pass", "function-argument-name"));
+    assert!(!has_rule_violation(
+        "func f(my_arg):\n    pass",
+        "function-argument-name"
+    ));
+    assert!(!has_rule_violation(
+        "func f(_unused):\n    pass",
+        "function-argument-name"
+    ));
+    assert!(has_rule_violation(
+        "func f(MyArg):\n    pass",
+        "function-argument-name"
+    ));
 }
 
 #[test]
 fn test_loop_variable_name() {
-    assert!(!has_rule_violation("for i in range(10):\n    pass", "loop-variable-name"));
-    assert!(!has_rule_violation("for _item in items:\n    pass", "loop-variable-name"));
-    assert!(has_rule_violation("for MyItem in items:\n    pass", "loop-variable-name"));
+    assert!(!has_rule_violation(
+        "for i in range(10):\n    pass",
+        "loop-variable-name"
+    ));
+    assert!(!has_rule_violation(
+        "for _item in items:\n    pass",
+        "loop-variable-name"
+    ));
+    assert!(has_rule_violation(
+        "for MyItem in items:\n    pass",
+        "loop-variable-name"
+    ));
 }
 
 #[test]
 fn test_sub_class_name() {
     // Inner classes should be PascalCase
-    assert!(!has_rule_violation("class MyClass:\n    class InnerClass:\n        pass", "sub-class-name"));
+    assert!(!has_rule_violation(
+        "class MyClass:\n    class InnerClass:\n        pass",
+        "sub-class-name"
+    ));
 }
 
 #[test]
 fn test_load_constant_name() {
     // Load constants should be PascalCase or CONSTANT_CASE
-    assert!(!has_rule_violation("const MyScene = load(\"res://a.tscn\")", "load-constant-name"));
-    assert!(!has_rule_violation("const MY_SCENE = load(\"res://a.tscn\")", "load-constant-name"));
-    assert!(has_rule_violation("const my_scene = load(\"res://a.tscn\")", "load-constant-name"));
+    assert!(!has_rule_violation(
+        "const MyScene = load(\"res://a.tscn\")",
+        "load-constant-name"
+    ));
+    assert!(!has_rule_violation(
+        "const MY_SCENE = load(\"res://a.tscn\")",
+        "load-constant-name"
+    ));
+    assert!(has_rule_violation(
+        "const my_scene = load(\"res://a.tscn\")",
+        "load-constant-name"
+    ));
 }
 
 // ============================================================================
@@ -178,7 +274,10 @@ fn test_max_file_lines() {
     assert!(!has_rule_violation(short_file, "max-file-lines"));
 
     // Default is 1000 lines
-    let long_file = (0..1001).map(|i| format!("var v{} = {}", i, i)).collect::<Vec<_>>().join("\n");
+    let long_file = (0..1001)
+        .map(|i| format!("var v{} = {}", i, i))
+        .collect::<Vec<_>>()
+        .join("\n");
     assert!(has_rule_violation(&long_file, "max-file-lines"));
 }
 
@@ -189,38 +288,68 @@ fn test_max_file_lines() {
 #[test]
 fn test_unnecessary_pass() {
     // Pass alone is fine
-    assert!(!has_rule_violation("func f():\n    pass", "unnecessary-pass"));
+    assert!(!has_rule_violation(
+        "func f():\n    pass",
+        "unnecessary-pass"
+    ));
 
     // Pass with other statements is unnecessary
-    assert!(has_rule_violation("func f():\n    var x = 1\n    pass", "unnecessary-pass"));
+    assert!(has_rule_violation(
+        "func f():\n    var x = 1\n    pass",
+        "unnecessary-pass"
+    ));
 }
 
 #[test]
 fn test_unused_argument() {
     // Used argument
-    assert!(!has_rule_violation("func f(x):\n    print(x)", "unused-argument"));
+    assert!(!has_rule_violation(
+        "func f(x):\n    print(x)",
+        "unused-argument"
+    ));
 
     // Unused argument
-    assert!(has_rule_violation("func f(x):\n    pass", "unused-argument"));
+    assert!(has_rule_violation(
+        "func f(x):\n    pass",
+        "unused-argument"
+    ));
 
     // Underscore prefix is ignored
-    assert!(!has_rule_violation("func f(_x):\n    pass", "unused-argument"));
+    assert!(!has_rule_violation(
+        "func f(_x):\n    pass",
+        "unused-argument"
+    ));
 }
 
 #[test]
 fn test_unused_argument_typed() {
     // Typed used argument
-    assert!(!has_rule_violation("func f(x: int):\n    print(x)", "unused-argument"));
+    assert!(!has_rule_violation(
+        "func f(x: int):\n    print(x)",
+        "unused-argument"
+    ));
 
     // Typed unused argument
-    assert!(has_rule_violation("func f(x: int):\n    pass", "unused-argument"));
+    assert!(has_rule_violation(
+        "func f(x: int):\n    pass",
+        "unused-argument"
+    ));
 }
 
 #[test]
 fn test_comparison_with_itself() {
-    assert!(!has_rule_violation("if x == y:\n    pass", "comparison-with-itself"));
-    assert!(has_rule_violation("if x == x:\n    pass", "comparison-with-itself"));
-    assert!(has_rule_violation("if foo == foo:\n    pass", "comparison-with-itself"));
+    assert!(!has_rule_violation(
+        "if x == y:\n    pass",
+        "comparison-with-itself"
+    ));
+    assert!(has_rule_violation(
+        "if x == x:\n    pass",
+        "comparison-with-itself"
+    ));
+    assert!(has_rule_violation(
+        "if foo == foo:\n    pass",
+        "comparison-with-itself"
+    ));
 }
 
 #[test]
@@ -241,13 +370,22 @@ var b = load("res://a.tscn")
 #[test]
 fn test_expression_not_assigned() {
     // Call expressions are OK (side effects)
-    assert!(!has_rule_violation("func f():\n    print(1)", "expression-not-assigned"));
+    assert!(!has_rule_violation(
+        "func f():\n    print(1)",
+        "expression-not-assigned"
+    ));
 
     // Assignments are OK
-    assert!(!has_rule_violation("func f():\n    var x = 1 + 2", "expression-not-assigned"));
+    assert!(!has_rule_violation(
+        "func f():\n    var x = 1 + 2",
+        "expression-not-assigned"
+    ));
 
     // Standalone arithmetic is likely a bug
-    assert!(has_rule_violation("func f():\n    1 + 2", "expression-not-assigned"));
+    assert!(has_rule_violation(
+        "func f():\n    1 + 2",
+        "expression-not-assigned"
+    ));
 }
 
 // ============================================================================

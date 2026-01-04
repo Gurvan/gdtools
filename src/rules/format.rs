@@ -145,12 +145,8 @@ impl Rule for TrailingWhitespaceRule {
             if line.ends_with(' ') || line.ends_with('\t') {
                 let trimmed_len = line.trim_end().len();
                 let line_num = line_idx + 1;
-                let diagnostic = Diagnostic::new(
-                    self.meta.id,
-                    severity,
-                    "Trailing whitespace",
-                )
-                .with_location(line_num, trimmed_len + 1);
+                let diagnostic = Diagnostic::new(self.meta.id, severity, "Trailing whitespace")
+                    .with_location(line_num, trimmed_len + 1);
 
                 diagnostics.push(diagnostic);
             }
@@ -272,10 +268,7 @@ impl Rule for MaxFileLinesRule {
             let diagnostic = Diagnostic::new(
                 self.meta.id,
                 severity,
-                format!(
-                    "File has {} lines (max {})",
-                    line_count, self.max_lines
-                ),
+                format!("File has {} lines (max {})", line_count, self.max_lines),
             )
             .with_location(self.max_lines + 1, 1);
 

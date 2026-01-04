@@ -151,9 +151,7 @@ impl FormattedOutput {
                 // This is a blank line (no source mapping)
                 // Before adding the blank line, check if there are comments that should go before it
                 // Look ahead to find the next source-mapped line
-                let next_src_line = lines_vec[(i + 1)..]
-                    .iter()
-                    .find_map(|l| l.source_line);
+                let next_src_line = lines_vec[(i + 1)..].iter().find_map(|l| l.source_line);
 
                 if let Some(next_sl) = next_src_line {
                     // Determine which comments belong BEFORE the blank lines (with previous code)
@@ -173,7 +171,8 @@ impl FormattedOutput {
                         }
 
                         // Check if this is a comment
-                        let is_comment = source_lines.get(comment_line - 1)
+                        let is_comment = source_lines
+                            .get(comment_line - 1)
                             .map(|s| s.trim().starts_with('#'))
                             .unwrap_or(false);
 
@@ -186,7 +185,8 @@ impl FormattedOutput {
                         let block_start = comment_line;
                         let mut block_end = comment_line;
                         while block_end < next_sl {
-                            let next_is_comment = source_lines.get(block_end)
+                            let next_is_comment = source_lines
+                                .get(block_end)
                                 .map(|s| s.trim().starts_with('#'))
                                 .unwrap_or(false);
                             if next_is_comment {
@@ -198,12 +198,12 @@ impl FormattedOutput {
 
                         // Check what follows this comment block
                         let line_after_block = block_end + 1;
-                        let next_non_blank = (line_after_block..=next_sl)
-                            .find(|&ln| {
-                                source_lines.get(ln - 1)
-                                    .map(|s| !s.trim().is_empty())
-                                    .unwrap_or(false)
-                            });
+                        let next_non_blank = (line_after_block..=next_sl).find(|&ln| {
+                            source_lines
+                                .get(ln - 1)
+                                .map(|s| !s.trim().is_empty())
+                                .unwrap_or(false)
+                        });
 
                         // If there's a blank between the comment block and next content,
                         // or if there's nothing after (comment at end of gap), inject before blanks

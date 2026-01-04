@@ -97,7 +97,10 @@ fn test_inferred_type_variable() {
     // := is inferred type assignment
     assert_eq!(format("var x := 1\n"), "var x := 1\n");
     assert_eq!(format("var x:=1\n"), "var x := 1\n");
-    assert_eq!(format("var gltf := GLTFDocument.new()\n"), "var gltf := GLTFDocument.new()\n");
+    assert_eq!(
+        format("var gltf := GLTFDocument.new()\n"),
+        "var gltf := GLTFDocument.new()\n"
+    );
 }
 
 #[test]
@@ -129,9 +132,15 @@ func foo():
 "#;
     let formatted = format(input);
     // Comments should stay inside the array, not leak to before func
-    assert!(!formatted.contains("# \"B\",\n# \"C\",\nfunc"),
-        "Comments leaked outside array:\n{}", formatted);
-    assert!(formatted.contains("var NAMES = ["), "Array declaration missing");
+    assert!(
+        !formatted.contains("# \"B\",\n# \"C\",\nfunc"),
+        "Comments leaked outside array:\n{}",
+        formatted
+    );
+    assert!(
+        formatted.contains("var NAMES = ["),
+        "Array declaration missing"
+    );
     assert!(formatted.contains("func foo():"), "Function missing");
 }
 
@@ -143,10 +152,7 @@ fn test_const_statement() {
 
 #[test]
 fn test_function_definition() {
-    assert_eq!(
-        format("func foo(  ):\n\tpass\n"),
-        "func foo():\n\tpass\n"
-    );
+    assert_eq!(format("func foo(  ):\n\tpass\n"), "func foo():\n\tpass\n");
     assert_eq!(
         format("func foo(a:int,b:int)->int:\n\treturn a+b\n"),
         "func foo(a: int, b: int) -> int:\n\treturn a + b\n"
@@ -216,7 +222,10 @@ fn test_trailing_newline() {
 #[test]
 fn test_array_literal() {
     assert_eq!(format("var x = [1,2,3]\n"), "var x = [1, 2, 3]\n");
-    assert_eq!(format("var x = [  1  ,  2  ,  3  ]\n"), "var x = [1, 2, 3]\n");
+    assert_eq!(
+        format("var x = [  1  ,  2  ,  3  ]\n"),
+        "var x = [1, 2, 3]\n"
+    );
     assert_eq!(format("var x = []\n"), "var x = []\n");
 }
 
@@ -225,7 +234,10 @@ fn test_dictionary_literal() {
     // Per style guide: single-line dictionaries have space after { and before }
     assert_eq!(format("var x = {a:1,b:2}\n"), "var x = { a: 1, b: 2 }\n");
     assert_eq!(format("var x = {a: 1, b: 2}\n"), "var x = { a: 1, b: 2 }\n");
-    assert_eq!(format("var x = { a: 1, b: 2 }\n"), "var x = { a: 1, b: 2 }\n");
+    assert_eq!(
+        format("var x = { a: 1, b: 2 }\n"),
+        "var x = { a: 1, b: 2 }\n"
+    );
     assert_eq!(format("var x = {}\n"), "var x = {}\n");
 }
 
@@ -425,7 +437,8 @@ fn test_multiline_dictionary() {
 #[test]
 fn test_typed_default_parameter_multiple() {
     // Function with multiple typed parameters, some with defaults
-    let input = "func save_file(path: String, with_model: bool = false, count: int = 10):\n\tpass\n";
+    let input =
+        "func save_file(path: String, with_model: bool = false, count: int = 10):\n\tpass\n";
     assert_eq!(format(input), input);
 }
 
@@ -459,7 +472,11 @@ fn test_ast_equivalence_functions() {
 fn test_static_function() {
     let input = "static func bar():\n\tpass\n";
     let output = format(input);
-    assert!(output.starts_with("static func"), "static keyword should be preserved, got: {}", output);
+    assert!(
+        output.starts_with("static func"),
+        "static keyword should be preserved, got: {}",
+        output
+    );
     assert_ast_equivalent(input);
 }
 
@@ -468,7 +485,11 @@ fn test_annotations() {
     // @export annotation should be preserved
     let input = "@export var speed: float = 10.0\n";
     let output = format(input);
-    assert!(output.contains("@export"), "@export should be preserved, got: {}", output);
+    assert!(
+        output.contains("@export"),
+        "@export should be preserved, got: {}",
+        output
+    );
     assert_ast_equivalent(input);
 }
 
@@ -476,7 +497,11 @@ fn test_annotations() {
 fn test_match_statement() {
     let input = "match x:\n\t1:\n\t\tpass\n\t_:\n\t\tpass\n";
     let output = format(input);
-    assert!(output.contains("match x:"), "match statement should be preserved, got: {}", output);
+    assert!(
+        output.contains("match x:"),
+        "match statement should be preserved, got: {}",
+        output
+    );
     assert_ast_equivalent(input);
 }
 
@@ -537,7 +562,10 @@ fn test_idempotent_fixture() {
     let source = include_str!("fixtures/format/test_basic.gd");
     let formatted_once = format(source);
     let formatted_twice = format(&formatted_once);
-    assert_eq!(formatted_once, formatted_twice, "Formatting is not idempotent");
+    assert_eq!(
+        formatted_once, formatted_twice,
+        "Formatting is not idempotent"
+    );
 }
 
 // =============================================================================
@@ -749,7 +777,10 @@ fn test_fullfile_fixture_idempotent() {
     let source = include_str!("fixtures/format/fullfile.gd");
     let formatted_once = format(source);
     let formatted_twice = format(&formatted_once);
-    assert_eq!(formatted_once, formatted_twice, "Formatting fullfile.gd is not idempotent");
+    assert_eq!(
+        formatted_once, formatted_twice,
+        "Formatting fullfile.gd is not idempotent"
+    );
 }
 
 #[test]
@@ -773,18 +804,20 @@ func _new_trigger_by_name(name_: String) -> Serializable:
 
     // The comments should NOT appear right before the func declaration
     // They should stay inside the array
-    let func_pos = formatted.find("func _new_trigger_by_name").expect("func not found");
+    let func_pos = formatted
+        .find("func _new_trigger_by_name")
+        .expect("func not found");
     let before_func = &formatted[..func_pos];
 
     // The text right before func should be blank lines, not comments
     let lines_before: Vec<&str> = before_func.lines().collect();
-    let last_non_empty = lines_before.iter().rev()
-        .find(|l| !l.trim().is_empty());
+    let last_non_empty = lines_before.iter().rev().find(|l| !l.trim().is_empty());
 
     assert!(
-        last_non_empty.map_or(true, |l| l.trim() == "]"),
+        last_non_empty.is_none_or(|l| l.trim() == "]"),
         "Expected ']' before blank lines before func, got: {:?}\nFull output:\n{}",
-        last_non_empty, formatted
+        last_non_empty,
+        formatted
     );
 }
 
@@ -879,7 +912,10 @@ fn test_multiline_dict_with_trailing_comma_preserved() {
 
 #[test]
 fn test_single_line_dict_without_trailing_comma() {
-    assert_eq!(format("var d = { a: 1, b: 2 }\n"), "var d = { a: 1, b: 2 }\n");
+    assert_eq!(
+        format("var d = { a: 1, b: 2 }\n"),
+        "var d = { a: 1, b: 2 }\n"
+    );
 }
 
 // =============================================================================

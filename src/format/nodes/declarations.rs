@@ -94,7 +94,10 @@ pub fn format_function_definition(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     // Build function signature
     let static_prefix = if is_static { "static " } else { "" };
     ctx.output.push_mapped(
-        format!("{}{}func {}({}){}:", indent, static_prefix, name, params, return_type),
+        format!(
+            "{}{}func {}({}){}:",
+            indent, static_prefix, name, params, return_type
+        ),
         line,
     );
 
@@ -358,10 +361,8 @@ pub fn format_const_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
         let value = value_node
             .map(|v| format_expression(v, ctx))
             .unwrap_or_default();
-        ctx.output.push_mapped(
-            format!("{}const {} := {}", indent, name, value),
-            line,
-        );
+        ctx.output
+            .push_mapped(format!("{}const {} := {}", indent, name, value), line);
     } else {
         // Get type hint
         let type_hint = node
@@ -374,8 +375,10 @@ pub fn format_const_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
             .map(|v| format!(" = {}", format_expression(v, ctx)))
             .unwrap_or_default();
 
-        ctx.output
-            .push_mapped(format!("{}const {}{}{}", indent, name, type_hint, value), line);
+        ctx.output.push_mapped(
+            format!("{}const {}{}{}", indent, name, type_hint, value),
+            line,
+        );
     }
 }
 
@@ -440,7 +443,8 @@ pub fn format_enum_definition(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     if let Some(body_node) = body {
         let members = collect_enum_members(body_node, ctx);
         if members.is_empty() {
-            ctx.output.push_mapped(format!("{}enum{} {{}}", indent, name), line);
+            ctx.output
+                .push_mapped(format!("{}enum{} {{}}", indent, name), line);
         } else {
             // Check if enum body has trailing comma using AST inspection
             let trailing_comma = has_trailing_comma(body_node);
@@ -449,7 +453,8 @@ pub fn format_enum_definition(node: Node<'_>, ctx: &mut FormatContext<'_>) {
                 // Multiline format
                 let single_indent = ctx.options.indent_style.as_str();
                 let inner_indent = format!("{}{}", indent, single_indent);
-                ctx.output.push_mapped(format!("{}enum{} {{", indent, name), line);
+                ctx.output
+                    .push_mapped(format!("{}enum{} {{", indent, name), line);
                 for member in &members {
                     // Each member on its own line
                     ctx.output.push_line(format!("{}{},", inner_indent, member));
@@ -464,7 +469,8 @@ pub fn format_enum_definition(node: Node<'_>, ctx: &mut FormatContext<'_>) {
             }
         }
     } else {
-        ctx.output.push_mapped(format!("{}enum{} {{}}", indent, name), line);
+        ctx.output
+            .push_mapped(format!("{}enum{} {{}}", indent, name), line);
     }
 }
 
@@ -499,4 +505,3 @@ fn format_enum_member(node: Node<'_>, ctx: &FormatContext<'_>) -> String {
         name.to_string()
     }
 }
-

@@ -10,7 +10,11 @@ use gdtools::lint::{run_linter, Diagnostic, Rule, Severity};
 use gdtools::rules::all_rules;
 
 #[derive(Parser)]
-#[command(name = "gdlint", version, about = "A fast GDScript linter for Godot 4.x")]
+#[command(
+    name = "gdlint",
+    version,
+    about = "A fast GDScript linter for Godot 4.x"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
@@ -181,13 +185,10 @@ fn create_rules(config: &Config) -> Result<Vec<Box<dyn Rule>>> {
     Ok(rules)
 }
 
-fn lint_file(
-    path: &PathBuf,
-    rules: &[Box<dyn Rule>],
-    config: &Config,
-) -> Result<Vec<Diagnostic>> {
+fn lint_file(path: &PathBuf, rules: &[Box<dyn Rule>], config: &Config) -> Result<Vec<Diagnostic>> {
     let source = std::fs::read_to_string(path).into_diagnostic()?;
-    run_linter(&source, path, rules, config).map_err(|e| miette!("Parse error in {:?}: {}", path, e))
+    run_linter(&source, path, rules, config)
+        .map_err(|e| miette!("Parse error in {:?}: {}", path, e))
 }
 
 fn lint_directory(
@@ -197,9 +198,7 @@ fn lint_directory(
 ) -> Result<Vec<Diagnostic>> {
     let mut all_diagnostics = Vec::new();
 
-    let walker = WalkBuilder::new(path)
-        .standard_filters(true)
-        .build();
+    let walker = WalkBuilder::new(path).standard_filters(true).build();
 
     for entry in walker {
         let entry = entry.into_diagnostic()?;

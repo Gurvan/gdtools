@@ -3,17 +3,14 @@ use std::collections::{HashMap, HashSet};
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-static IGNORE_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"#\s*gdlint:\s*ignore\s*=\s*([a-z0-9_,-]+)").unwrap()
-});
+static IGNORE_PATTERN: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"#\s*gdlint:\s*ignore\s*=\s*([a-z0-9_,-]+)").unwrap());
 
-static DISABLE_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"#\s*gdlint:\s*disable\s*=\s*([a-z0-9_,-]+)").unwrap()
-});
+static DISABLE_PATTERN: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"#\s*gdlint:\s*disable\s*=\s*([a-z0-9_,-]+)").unwrap());
 
-static ENABLE_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"#\s*gdlint:\s*enable\s*=\s*([a-z0-9_,-]+)").unwrap()
-});
+static ENABLE_PATTERN: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"#\s*gdlint:\s*enable\s*=\s*([a-z0-9_,-]+)").unwrap());
 
 #[derive(Debug, Default)]
 pub struct Suppressions {

@@ -72,30 +72,24 @@ fn compare_nodes_with_source(
     if orig.kind() != fmt.kind() {
         return AstCheckResult::Different {
             path,
-            difference: format!(
-                "node kind differs: '{}' vs '{}'",
-                orig.kind(),
-                fmt.kind()
-            ),
+            difference: format!("node kind differs: '{}' vs '{}'", orig.kind(), fmt.kind()),
         };
     }
 
     // For terminal nodes, compare text content
-    if orig.named_child_count() == 0 && fmt.named_child_count() == 0 {
-        if is_value_node(orig.kind()) {
-            let orig_text = &orig_source[orig.start_byte()..orig.end_byte()];
-            let fmt_text = &fmt_source[fmt.start_byte()..fmt.end_byte()];
-            if orig_text != fmt_text {
-                return AstCheckResult::Different {
-                    path,
-                    difference: format!(
-                        "{} value differs: '{}' vs '{}'",
-                        orig.kind(),
-                        orig_text,
-                        fmt_text
-                    ),
-                };
-            }
+    if orig.named_child_count() == 0 && fmt.named_child_count() == 0 && is_value_node(orig.kind()) {
+        let orig_text = &orig_source[orig.start_byte()..orig.end_byte()];
+        let fmt_text = &fmt_source[fmt.start_byte()..fmt.end_byte()];
+        if orig_text != fmt_text {
+            return AstCheckResult::Different {
+                path,
+                difference: format!(
+                    "{} value differs: '{}' vs '{}'",
+                    orig.kind(),
+                    orig_text,
+                    fmt_text
+                ),
+            };
         }
     }
 

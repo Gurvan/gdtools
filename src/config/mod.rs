@@ -6,8 +6,8 @@ use std::path::Path;
 
 pub fn load_config(path: Option<&Path>) -> Result<Config, String> {
     if let Some(p) = path {
-        let content = std::fs::read_to_string(p)
-            .map_err(|e| format!("Failed to read config file: {}", e))?;
+        let content =
+            std::fs::read_to_string(p).map_err(|e| format!("Failed to read config file: {}", e))?;
         toml::from_str(&content).map_err(|e| format!("Failed to parse config: {}", e))
     } else if let Some(found) = find_config_file() {
         let content = std::fs::read_to_string(&found)
