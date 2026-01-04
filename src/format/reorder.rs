@@ -240,8 +240,12 @@ fn get_lines_text(source: &str, start_line: usize, end_line: usize) -> String {
     let lines: Vec<&str> = source.lines().collect();
     let mut result = String::new();
 
-    for i in (start_line - 1)..end_line.min(lines.len()) {
-        result.push_str(lines[i]);
+    for line in lines
+        .iter()
+        .take(end_line.min(lines.len()))
+        .skip(start_line - 1)
+    {
+        result.push_str(line);
         result.push('\n');
     }
 
@@ -298,8 +302,7 @@ fn extract_declarations(
                     // Check if this section annotation is followed by a variable
                     // If not, it's orphaned and should be preserved as-is
                     let mut has_following_var = false;
-                    for j in (i + 1)..children.len() {
-                        let next_child = children[j];
+                    for next_child in children.iter().skip(i + 1) {
                         if next_child.kind() == "variable_statement" {
                             has_following_var = true;
                             break;

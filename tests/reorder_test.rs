@@ -880,7 +880,7 @@ signal third
     // Check they're all in the signal section (before any vars)
     let signal_section = result.find("signal").unwrap();
     assert!(
-        result.find("var").map_or(true, |v| signal_section < v),
+        result.find("var").is_none_or(|v| signal_section < v),
         "Signals should come before vars"
     );
 }
