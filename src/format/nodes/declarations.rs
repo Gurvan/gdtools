@@ -222,7 +222,7 @@ fn format_function_body(node: Node<'_>, ctx: &mut FormatContext<'_>) {
 }
 
 /// Format variable statement: `var x = 1` or `var x: int = 1` or `var x := 1`
-/// Also handles variables with getter/setter blocks.
+/// Also handles variables with getter/setter blocks and static variables.
 pub fn format_variable_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     let line = node.start_position().row + 1;
     let indent = ctx.indent_str();
@@ -254,6 +254,11 @@ pub fn format_variable_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     }
     // For multiline arrays/dicts without trailing comma, let expression formatter handle it
 
+    // Check for static modifier
+    let is_static = node
+        .children(&mut node.walk())
+        .any(|c| c.kind() == "static_keyword");
+
     // Check for annotations (export, onready)
     // The tree structure is: variable_statement -> annotations -> annotation
     let annotations_prefix = if let Some(annotations_node) = node
@@ -274,6 +279,9 @@ pub fn format_variable_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
     } else {
         String::new()
     };
+
+    // Build the static prefix
+    let static_prefix = if is_static { "static " } else { "" };
 
     // Check if this is an inferred type assignment (:=) using AST
     // The type field can be either "inferred_type" or "type" node
@@ -297,7 +305,10 @@ pub fn format_variable_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
             .map(|v| format_expression(v, ctx))
             .unwrap_or_default();
         ctx.output.push_mapped(
-            format!("{}{}var {} := {}", indent, annotations_prefix, name, value),
+            format!(
+                "{}{}{}var {} := {}",
+                indent, annotations_prefix, static_prefix, name, value
+            ),
             line,
         );
     } else {
@@ -313,8 +324,8 @@ pub fn format_variable_statement(node: Node<'_>, ctx: &mut FormatContext<'_>) {
 
         ctx.output.push_mapped(
             format!(
-                "{}{}var {}{}{}",
-                indent, annotations_prefix, name, type_hint, value
+                "{}{}{}var {}{}{}",
+                indent, annotations_prefix, static_prefix, name, type_hint, value
             ),
             line,
         );

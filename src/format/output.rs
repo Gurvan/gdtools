@@ -234,6 +234,19 @@ impl FormattedOutput {
             }
         }
 
+        // Handle trailing comments after all formatted code
+        // These are comments at the end of the file that weren't captured
+        let total_source_lines = source_lines.len();
+        for comment_line in (last_source_line + 1)..=total_source_lines {
+            if already_output.contains(&comment_line) {
+                continue;
+            }
+            if let Some(comment) = comments.get_standalone(comment_line) {
+                new_lines.push(FormattedLine::with_source(comment.clone(), comment_line));
+                already_output.insert(comment_line);
+            }
+        }
+
         self.lines = new_lines;
     }
 

@@ -41,6 +41,10 @@ pub struct FormatOptions {
     /// Whether to ensure a trailing newline at end of file.
     #[serde(default = "default_true")]
     pub trailing_newline: bool,
+
+    /// Whether to reorder class members according to the GDScript style guide.
+    #[serde(default)]
+    pub reorder: bool,
 }
 
 fn default_line_length() -> usize {
@@ -57,6 +61,7 @@ impl Default for FormatOptions {
             indent_style: IndentStyle::default(),
             max_line_length: default_line_length(),
             trailing_newline: true,
+            reorder: false,
         }
     }
 }

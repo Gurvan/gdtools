@@ -4,18 +4,21 @@ mod context;
 mod nodes;
 mod options;
 mod output;
+pub mod reorder;
 mod skip_regions;
 
 pub use ast_check::{compare_ast_with_source, AstCheckResult};
 pub use context::FormatContext;
 pub use options::{FormatOptions, IndentStyle};
 pub use output::{FormattedLine, FormattedOutput};
+pub use reorder::reorder_source;
 
 use crate::parser;
 use comments::Comments;
 use skip_regions::SkipRegions;
 
 /// Format GDScript source code according to the official style guide.
+/// Note: This does NOT reorder - call `reorder_source` separately if needed.
 pub fn run_formatter(source: &str, options: &FormatOptions) -> Result<String, FormatError> {
     // Parse the source
     let tree = parser::parse(source).map_err(FormatError::Parse)?;

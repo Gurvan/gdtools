@@ -8,7 +8,8 @@ use miette::{miette, IntoDiagnostic, Result};
 
 use gdtools::config::load_config;
 use gdtools::format::{
-    compare_ast_with_source, run_formatter, AstCheckResult, FormatOptions, IndentStyle,
+    compare_ast_with_source, reorder_source, run_formatter, AstCheckResult, FormatOptions,
+    IndentStyle,
 };
 use gdtools::parser;
 
@@ -54,6 +55,10 @@ struct Cli {
     /// Skip safety checks (AST equivalence and idempotence) - not recommended
     #[arg(long)]
     unsafe_skip_checks: bool,
+
+    /// Reorder class members according to the GDScript style guide
+    #[arg(long)]
+    reorder: bool,
 }
 
 fn main() -> ExitCode {
@@ -133,6 +138,7 @@ fn build_options(cli: &Cli) -> Result<FormatOptions> {
         indent_style,
         max_line_length: cli.line_length,
         trailing_newline: true,
+        reorder: cli.reorder,
     })
 }
 
@@ -145,25 +151,38 @@ fn format_stdin(
     let mut source = String::new();
     io::stdin().read_to_string(&mut source).into_diagnostic()?;
 
+    // Step 1: Format
     let formatted = run_formatter(&source, options).map_err(|e| miette!("{}", e))?;
 
-    // Run safety checks - for stdin we fail hard since we can't skip
+    // Step 2: Run safety checks on formatted output
     if run_safety_checks {
         verify_ast_equivalence("<stdin>", &source, &formatted)?;
         verify_idempotent("<stdin>", &formatted, options)?;
     }
 
+    // Step 3: Apply reordering if enabled
+    let final_output = if options.reorder {
+        let reordered = reorder_source(&formatted).map_err(|e| miette!("{}", e))?;
+        // Step 4: Check idempotency of reordering
+        if run_safety_checks {
+            verify_reorder_idempotent("<stdin>", &reordered)?;
+        }
+        reordered
+    } else {
+        formatted
+    };
+
     if check {
-        return Ok(source != formatted);
+        return Ok(source != final_output);
     }
 
     if diff {
-        print_diff("<stdin>", &source, &formatted);
-        return Ok(source != formatted);
+        print_diff("<stdin>", &source, &final_output);
+        return Ok(source != final_output);
     }
 
     io::stdout()
-        .write_all(formatted.as_bytes())
+        .write_all(final_output.as_bytes())
         .into_diagnostic()?;
 
     Ok(false)
@@ -187,7 +206,9 @@ fn process_file(
     }
 
     let source = std::fs::read_to_string(path).into_diagnostic()?;
+    let filename = path.display().to_string();
 
+    // Step 1: Format the source
     let formatted = match run_formatter(&source, options) {
         Ok(f) => f,
         Err(e) => {
@@ -196,9 +217,8 @@ fn process_file(
         }
     };
 
-    // Run safety checks by default - skip file if they fail
+    // Step 2: Run safety checks on formatted output
     if run_safety_checks {
-        let filename = path.display().to_string();
         if let Err(e) = verify_ast_equivalence(&filename, &source, &formatted) {
             eprintln!("Warning: skipping {} - {}", filename, e);
             return Ok(false);
@@ -209,7 +229,29 @@ fn process_file(
         }
     }
 
-    let changed = source != formatted;
+    // Step 3: Apply reordering if enabled
+    let final_output = if options.reorder {
+        match reorder_source(&formatted) {
+            Ok(reordered) => {
+                // Step 4: Check idempotency of reordering
+                if run_safety_checks {
+                    if let Err(e) = verify_reorder_idempotent(&filename, &reordered) {
+                        eprintln!("Warning: skipping {} - {}", filename, e);
+                        return Ok(false);
+                    }
+                }
+                reordered
+            }
+            Err(e) => {
+                eprintln!("Error reordering {:?}: {}", path, e);
+                return Ok(false);
+            }
+        }
+    } else {
+        formatted
+    };
+
+    let changed = source != final_output;
 
     if check {
         if changed {
@@ -220,21 +262,21 @@ fn process_file(
 
     if diff {
         if changed {
-            print_diff(&path.display().to_string(), &source, &formatted);
+            print_diff(&filename, &source, &final_output);
         }
         return Ok(changed);
     }
 
     if stdout {
         io::stdout()
-            .write_all(formatted.as_bytes())
+            .write_all(final_output.as_bytes())
             .into_diagnostic()?;
         return Ok(changed);
     }
 
     // Write formatted output
     if changed {
-        std::fs::write(path, &formatted).into_diagnostic()?;
+        std::fs::write(path, &final_output).into_diagnostic()?;
         println!("Formatted: {}", path.display());
     }
 
@@ -325,6 +367,19 @@ fn verify_idempotent(filename: &str, formatted: &str, options: &FormatOptions) -
     } else {
         Err(miette!(
             "Formatting is not idempotent for {}!\nFormatting the output again produces different results.",
+            filename
+        ))
+    }
+}
+
+fn verify_reorder_idempotent(filename: &str, reordered: &str) -> Result<()> {
+    let reordered_twice = reorder_source(reordered).map_err(|e| miette!("{}", e))?;
+
+    if reordered == reordered_twice {
+        Ok(())
+    } else {
+        Err(miette!(
+            "Reordering is not idempotent for {}!\nReordering the output again produces different results.",
             filename
         ))
     }
